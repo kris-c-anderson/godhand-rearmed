@@ -28,6 +28,7 @@
 #include "godhand/hud_layout.h"
 #include "godhand/call_profile.h"
 #include "godhand/counter_finder.h"
+#include "godhand/pc_sampler.h"
 #include "godhand/log.h"
 #include "ps2_runtime_macros.h" // FPU_CVT_W_S (the recompiled CVT.W.S)
 #include "runtime/ps2_display_options.h"
@@ -78,8 +79,9 @@ namespace godhand
             callprofile::report(100000);
         }
 
-        void frameStart(uint8_t *rdram, R5900Context *, PS2Runtime *)
+        void frameStart(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
+            pcsampler::noteMainContext(ctx);
             ps2_host_display::noteGameFrame();
             profileWindow();
             counterfinder::onFrame(rdram);

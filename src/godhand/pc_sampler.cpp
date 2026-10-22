@@ -4,6 +4,7 @@
 #include "runtime/ee_scheduler.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <sstream>
@@ -27,6 +28,11 @@ namespace godhand::pcsampler
 {
     namespace
     {
+        // The game's main thread context, published by the frame hook on the EE thread. The scheduler's own lookup
+        // (currentContext: a hash map and a vector of interrupt contexts) changes under a reader on another thread,
+        // which crashed the game on New Game; a guest thread's context itself stays at one address.
+        std::atomic<const R5900Context *> g_mainContext{nullptr};
+
         // The recompiled function holding pc: its first table slot (resume entries inside a function share the owner's
         // pointer), or pc's 256-byte region outside the table (module code).
         uint32_t owner(uint32_t pc)
@@ -57,14 +63,16 @@ namespace godhand::pcsampler
         }
     }
 
+    void noteMainContext(const R5900Context *ctx) { g_mainContext.store(ctx, std::memory_order_relaxed); }
+
     void installFromEnvironment(PS2Runtime &runtime)
     {
         const char *value = std::getenv("GODHAND_PC_SAMPLE");
         const int seconds = value ? std::atoi(value) : 0;
         if (seconds <= 0)
             return;
-        PS2Runtime *rt = &runtime;
-        std::thread([rt, seconds]() {
+        (void)runtime;
+        std::thread([seconds]() {
 #if defined(_WIN32)
             timeBeginPeriod(1);
 #endif
@@ -74,7 +82,7 @@ namespace godhand::pcsampler
             for (;;)
             {
                 std::this_thread::sleep_for(std::chrono::microseconds(500));
-                const R5900Context *ctx = rt->eeScheduler().currentContext();
+                const R5900Context *ctx = g_mainContext.load(std::memory_order_relaxed);
                 ++samples;
                 if (ctx)
                     ++pcs[ctx->pc];
@@ -97,7 +105,7 @@ namespace godhand::pcsampler
                 std::vector<std::pair<uint32_t, uint32_t>> top(functions.begin(), functions.end());
                 std::sort(top.begin(), top.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
                 std::ostringstream line;
-                line << "[pc-sample] " << samples << " samples (" << none << " with no guest thread); hottest pc 0x" << std::hex
+                line << "[pc-sample] " << samples << " samples of the main game thread (" << none << " before its first frame); hottest pc 0x" << std::hex
                      << topPc << std::dec << " " << (100.0 * topPcCount / std::max(1u, samples)) << "%:";
                 for (size_t i = 0; i < top.size() && i < 25u; ++i)
                     line << " 0x" << std::hex << top[i].first << std::dec << "=" << (1000 * top[i].second / std::max(1u, samples)) / 10.0 << "%";
