@@ -50,6 +50,7 @@ namespace godhand
         int g_stickInjected[4] = {-1, -1, -1, -1}; // the value written over the game's last frame (-1: none)
         uint8_t g_stickRaw[4] = {0x80u, 0x80u, 0x80u, 0x80u};
         uint32_t g_staleRestores = 0, g_holds = 0, g_frames = 0;
+        uint64_t g_gameFrame = 0; // every frame hook; at 60 frames/s the odd ones are the extra frames
 
         bool envOn(const char *name)
         {
@@ -82,6 +83,7 @@ namespace godhand
         void frameStart(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             pcsampler::noteMainContext(ctx);
+            ++g_gameFrame;
             ps2_host_display::noteGameFrame();
             profileWindow();
             counterfinder::onFrame(rdram);
@@ -159,6 +161,23 @@ namespace godhand
             std::memcpy(&ram8(rdram, address), &value, sizeof(value));
         }
 
+        // Replaces lbu v0,0x1C(s1) at 0x2AAA88 in cIDBase_move (0 = the layout's animations do not step): every
+        // other frame the animations of all HUD and menu layouts (button prompts, the stick-wiggle prompt, pulses,
+        // slides) are not stepped, so they play at the PS2's speed; positions are still worked out every frame.
+        void uiAnimStep(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint8_t value = (g_gameFrame & 1u) ? 0u : ram8(rdram, GPR_U32(ctx, 17) + 0x1Cu);
+            SET_GPR_U32(ctx, 2, value);
+        }
+
+        // Replaces addiu v0,v1,-1 at 0x1F6F8C in TimedButton_tick (an action button prompt's time, +0x32): counts
+        // down every other frame, so timed prompts (grab escapes and the like) last as long as on the PS2.
+        void buttonTimer(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            const int32_t value = GPR_S32(ctx, 3);
+            SET_GPR_S32(ctx, 2, (g_gameFrame & 1u) ? value : value - 1);
+        }
+
         // Replaces addiu v0,v0,-1 at 0x14530C (the roulette TIME dial, cCockRoulette +0x4D0): every other frame.
         void rouletteDial(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
@@ -178,6 +197,8 @@ namespace godhand
         ps2xRegisterHostHook("gh_fps60_hitbox_compare", &hitboxCompare);
         ps2xRegisterHostHook("gh_fps60_roulette_timer", &rouletteTimer);
         ps2xRegisterHostHook("gh_fps60_roulette_dial", &rouletteDial);
+        ps2xRegisterHostHook("gh_fps60_ui_anim", &uiAnimStep);
+        ps2xRegisterHostHook("gh_fps60_button_timer", &buttonTimer);
         ps2xSetPatchFlag("frame_hook", true); // always: it also counts game frames for the F3 overlay
         ps2xSetPatchFlag("fps60", g_fps60);
         GH_INFO(Game, "frame rate: " << (g_fps60 ? "60 FPS mode (Fps60=1)" : "30 FPS, as on the PS2") << "; L3 dash: "

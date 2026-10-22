@@ -23,6 +23,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <ps2_log.h>
 
@@ -813,7 +814,10 @@ namespace
             std::snprintf(name, sizeof(name), "vu1_%016llx.bin", static_cast<unsigned long long>(capture->imageHash));
             const std::filesystem::path path = capture->directory / name;
             std::error_code error;
-            if (!std::filesystem::exists(path, error))
+            // The file system is asked once per image (a set of the images seen): asking on every upload took ~10%
+            // of the EE thread in gameplay.
+            static std::unordered_set<uint64_t> seen;
+            if (seen.insert(capture->imageHash).second && !std::filesystem::exists(path, error))
             {
                 if (FILE *file = std::fopen(path.string().c_str(), "wb"))
                 {

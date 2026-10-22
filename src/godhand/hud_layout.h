@@ -7,8 +7,8 @@
 // quad goes through), each element about its own anchor, so circles stay round and HUD parts stay where they were.
 //
 // [Video] HudLayout (GODHAND_HUD), F7 cycles it while playing (F8 logs one frame's 2D draws):
-//   anchored  each HUD widget narrowed about its own position: a widget in the left third keeps its left edge, one in
-//             the right third its right edge, others their centre. Widgets: the game's cIDBase layouts, the player
+//   anchored  HUD widgets on the left third narrowed toward the screen's left edge, on the right third toward the
+//             right edge, others toward the centre; small ones (button prompts) about their own centre. Widgets: the game's cIDBase layouts, the player
 //             bar, the radar and the roulette menu. Default.
 //   centered  all 2D narrowed toward the screen centre (the whole HUD and menus inside a 4:3 area).
 //   off       only text and the health gauge narrowed (the PCSX2 16:9 patch); the rest stretched.

@@ -17,9 +17,8 @@
 //
 // F8 writes every 2D primitive of the next frame to the log (drawer, caller, group, anchor, x before and after).
 //
-// An anchor comes from the group's x extent in the previous frame (before narrowing): wider than half the screen =
-// screen centre; narrower than 12% = its centre; else left third = left edge, right third = right edge, otherwise
-// centre.
+// An anchor comes from the group's x extent in the previous frame (before narrowing): narrower than 12% of the screen =
+// its own centre; else by the third its centre is in: the screen's left edge, centre or right edge.
 #include "godhand/hud_layout.h"
 #include "godhand/log.h"
 #include "ps2_runtime.h"
@@ -121,18 +120,19 @@ namespace godhand::hud
             return (0x800 - width / 2) * 16;
         }
 
+        // Small groups (button prompts, icons, often placed on things in the 3D view) keep their own centre. Others
+        // are narrowed toward the screen edge or centre of the third they are in: every group in one third gets the
+        // same mapping, so layouts drawn over each other (a menu's background and its highlight) stay lined up.
         float anchorFromExtent(float x0, float x1, float width)
         {
             const float span = x1 - x0, centre = 0.5f * (x0 + x1);
-            if (span >= 0.5f * width)
-                return 0.5f * width;
             if (span < 0.12f * width)
                 return centre;
             if (centre < width / 3.0f)
-                return x0;
+                return 0.0f;
             if (centre > 2.0f * width / 3.0f)
-                return x1;
-            return centre;
+                return width;
+            return 0.5f * width;
         }
 
         float anchorFor(uint32_t key, float fallback, float width)

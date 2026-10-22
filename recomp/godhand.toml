@@ -87,6 +87,20 @@ hook = "gh_fps60_roulette_timer"
 flag = "fps60"
 replace = true
 
+# HUD and menu animations (cIDBase_move: lbu v0,0x1C(s1), 0 = no animation step): stepped every other frame.
+[[patches.hooks]]
+address = "0x002AAA88"
+hook = "gh_fps60_ui_anim"
+flag = "fps60"
+replace = true
+
+# Timed action button prompts (TimedButton_tick: addiu v0,v1,-1 on +0x32): count down every other frame.
+[[patches.hooks]]
+address = "0x001F6F8C"
+hook = "gh_fps60_button_timer"
+flag = "fps60"
+replace = true
+
 # Roulette TIME dial (cCockRoulette move, addiu v0,v0,-1 on +0x4D0, 95 frames): counts down every other frame.
 [[patches.hooks]]
 address = "0x0014530C"
