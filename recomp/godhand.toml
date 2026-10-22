@@ -79,11 +79,20 @@ address = "0x0015765C"
 value = "0x00000000"
 flag = "fps60"
 
-# Roulette time: the timer store (sw v0,0x15B0(s1)) is dropped (the pnach stores zero to whatever $at holds instead).
-[[patches.conditional]]
+# Roulette time (the pnach drops this store, freezing the timer): the player's roulette timer (sw v0,0x15B0(s1), 102
+# frames) is stored only every other frame, so it runs at the PS2's speed.
+[[patches.hooks]]
 address = "0x001147CC"
-value = "0x00000000"
+hook = "gh_fps60_roulette_timer"
 flag = "fps60"
+replace = true
+
+# Roulette TIME dial (cCockRoulette move, addiu v0,v0,-1 on +0x4D0, 95 frames): counts down every other frame.
+[[patches.hooks]]
+address = "0x0014530C"
+hook = "gh_fps60_roulette_dial"
+flag = "fps60"
+replace = true
 
 # Hitbox sync: c.eq.s f0,f2 -> "same integer frame" (the pnach's code cave at 0xF0000).
 [[patches.hooks]]
@@ -120,3 +129,113 @@ address = "0x0014300C"
 hook = "gh_ws_gauge_width"
 flag = "widescreen"
 replace = true
+
+# HUD layouts ("widescreen", src/godhand/hud_layout.cpp). The Gp_draw_* 2D primitives, after their vertex loop
+# (before the instruction): narrow the x of the converted vertices.
+# Gp_draw_line
+[[patches.hooks]]
+address = "0x0015B2F0"
+hook = "gh_hud_line"
+flag = "widescreen"
+
+# Gp_draw_poly3
+[[patches.hooks]]
+address = "0x0015B668"
+hook = "gh_hud_poly3"
+flag = "widescreen"
+
+# Gp_draw_poly4
+[[patches.hooks]]
+address = "0x0015BAEC"
+hook = "gh_hud_poly4"
+flag = "widescreen"
+
+# Gp_draw_polyFT4
+[[patches.hooks]]
+address = "0x0015BFEC"
+hook = "gh_hud_polyft4"
+flag = "widescreen"
+
+# Gp_draw_polyG4
+[[patches.hooks]]
+address = "0x0015CEC0"
+hook = "gh_hud_polyg4"
+flag = "widescreen"
+
+# func_0015D168 (sprite)
+[[patches.hooks]]
+address = "0x0015D3FC"
+hook = "gh_hud_sprite_d168"
+flag = "widescreen"
+
+# func_0015D6E8 (sprite)
+[[patches.hooks]]
+address = "0x0015D884"
+hook = "gh_hud_sprite_d6e8"
+flag = "widescreen"
+
+# func_0015DB30 (sprite)
+[[patches.hooks]]
+address = "0x0015DC5C"
+hook = "gh_hud_sprite_db30"
+flag = "widescreen"
+
+# func_0015C410 (strips), before sw $a3,0x40($sp)
+[[patches.hooks]]
+address = "0x0015C780"
+hook = "gh_hud_strip"
+flag = "widescreen"
+
+# cIDBase_trans: start of the entry loop
+[[patches.hooks]]
+address = "0x002AAD44"
+hook = "gh_hud_id_begin"
+flag = "widescreen"
+
+# cIDBase_trans: an entry is about to be drawn ($a1)
+[[patches.hooks]]
+address = "0x002AAE18"
+hook = "gh_hud_id_entry"
+flag = "widescreen"
+
+# cIDBase_trans: end
+[[patches.hooks]]
+address = "0x002AAEC8"
+hook = "gh_hud_id_end"
+flag = "widescreen"
+
+# cCockPlBar trans (func_001430E8): start
+[[patches.hooks]]
+address = "0x001430EC"
+hook = "gh_hud_plbar_begin"
+flag = "widescreen"
+
+# cCockPlBar trans: end
+[[patches.hooks]]
+address = "0x00143464"
+hook = "gh_hud_region_end"
+flag = "widescreen"
+
+# cCockRader trans (func_00144368): start
+[[patches.hooks]]
+address = "0x0014436C"
+hook = "gh_hud_radar_begin"
+flag = "widescreen"
+
+# cCockRader trans: end
+[[patches.hooks]]
+address = "0x00144A8C"
+hook = "gh_hud_region_end"
+flag = "widescreen"
+
+# cCockRoulette trans (func_00146328): start
+[[patches.hooks]]
+address = "0x0014632C"
+hook = "gh_hud_roulette_begin"
+flag = "widescreen"
+
+# cCockRoulette trans: end
+[[patches.hooks]]
+address = "0x00146704"
+hook = "gh_hud_region_end"
+flag = "widescreen"

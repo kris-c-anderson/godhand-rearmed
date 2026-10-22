@@ -10,8 +10,10 @@
 //   gsaspectratio=16:9                             PS2X_PCSX2_ASPECT = A (PCSX2's custom aspect ratio)
 //
 // recomp/godhand.toml has the three hooks (flag "widescreen"); they replace the instruction and set $at to the
-// computed float. Other 2D (menus, some HUD parts, movies) is not adjusted yet and shows stretched.
+// computed float. The rest of the 2D (HUD widgets, menus, button prompts) is narrowed by hud_layout.cpp, which also
+// decides whether the font and gauge hooks still narrow (HudLayout=off: only they do, as in the pnach).
 #include "godhand/widescreen.h"
+#include "godhand/hud_layout.h"
 #include "godhand/log.h"
 #include "ps2_runtime_macros.h" // SET_GPR_U32
 #include "runtime/ps2_display_options.h"
@@ -84,8 +86,8 @@ namespace godhand
         }
 
         void cameraWidth(uint8_t *, R5900Context *ctx, PS2Runtime *) { setAt(ctx, g_camera); }
-        void fontWidth(uint8_t *, R5900Context *ctx, PS2Runtime *) { setAt(ctx, g_font); }
-        void gaugeWidth(uint8_t *, R5900Context *ctx, PS2Runtime *) { setAt(ctx, g_gauge); }
+        void fontWidth(uint8_t *, R5900Context *ctx, PS2Runtime *) { setAt(ctx, hud::narrowFont() ? g_font : kFontWidth); }
+        void gaugeWidth(uint8_t *, R5900Context *ctx, PS2Runtime *) { setAt(ctx, hud::narrowGauge() ? g_gauge : 0x3F800000u); }
     }
 
     void installWidescreen()
@@ -102,6 +104,7 @@ namespace godhand
         ps2xRegisterHostHook("gh_ws_font_width", &fontWidth);
         ps2xRegisterHostHook("gh_ws_gauge_width", &gaugeWidth);
         ps2xSetPatchFlag("widescreen", wide);
+        hud::install(wide, 1.0f / wider);
         ps2_host_display::setAspect(aspect);
         if (wide && !std::getenv("PS2X_PCSX2_ASPECT"))
         {

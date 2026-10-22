@@ -39,6 +39,9 @@ set(GODHAND_HOST_SOURCES
     godhand/movie_watchdog.cpp
     godhand/frame_patches.cpp
     godhand/widescreen.cpp
+    godhand/hud_layout.cpp
+    godhand/counter_finder.cpp
+    godhand/pc_sampler.cpp
     godhand/function_hooks.cpp
     godhand/game_disc.cpp
     godhand/hang_dump.cpp

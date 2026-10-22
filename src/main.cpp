@@ -28,6 +28,7 @@
 #include "godhand/movie_watchdog.h"
 #include "godhand/frame_patches.h"
 #include "godhand/widescreen.h"
+#include "godhand/pc_sampler.h"
 #include "godhand/thread_policy.h"
 
 #if defined(PS2X_ENABLE_DEBUG_UI)
@@ -284,6 +285,7 @@ namespace
         {"video", "startmaximized", "GODHAND_START_MAXIMIZED"},
         {"video", "windowsize", "PS2X_WINDOW_SIZE"},
         {"video", "aspectratio", "GODHAND_ASPECT"},
+        {"video", "hudlayout", "GODHAND_HUD"},
         {"video", "startfullscreen", "GODHAND_START_FULLSCREEN"},
     };
 
@@ -738,6 +740,7 @@ int main(int argc, char *argv[])
         godhand::installFramePatches(runtime);
         godhand::hangdump::setRuntime(&runtime);
         godhand::calltrace::installFromEnvironment(runtime);
+        godhand::pcsampler::installFromEnvironment(runtime);
         godhand::FunctionHooks::instance().logBindings();
         godhand::callprofile::installFromEnvironment(runtime); // last: wraps whatever the slots hold now
 

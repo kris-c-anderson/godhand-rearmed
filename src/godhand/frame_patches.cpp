@@ -25,7 +25,9 @@
 // next frame (0x30ADD8..0x30ADF0), where the pnach's stick hook ran; the per-vblank writes run there too, once per
 // game frame.
 #include "godhand/frame_patches.h"
+#include "godhand/hud_layout.h"
 #include "godhand/call_profile.h"
+#include "godhand/counter_finder.h"
 #include "godhand/log.h"
 #include "ps2_runtime_macros.h" // FPU_CVT_W_S (the recompiled CVT.W.S)
 #include "runtime/ps2_display_options.h"
@@ -80,6 +82,8 @@ namespace godhand
         {
             ps2_host_display::noteGameFrame();
             profileWindow();
+            counterfinder::onFrame(rdram);
+            hud::onFrame(rdram);
             if (g_l3Dash)
             {
                 uint16_t buttons = 0;
@@ -140,14 +144,38 @@ namespace godhand
             const int32_t current = FPU_CVT_W_S(ctx->f[2]);
             ctx->fcr31 = last == current ? (ctx->fcr31 | 0x800000u) : (ctx->fcr31 & ~0x800000u);
         }
+
+        // Replaces sw v0,0x15B0(s1) at 0x1147CC (the player's roulette timer, decremented once per game frame): every
+        // other frame the store is skipped, so at 60 frames/s it lasts as long as on the PS2.
+        void rouletteTimer(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            static bool skip = false;
+            skip = !skip;
+            if (skip)
+                return;
+            const uint32_t value = GPR_U32(ctx, 2), address = GPR_U32(ctx, 17) + 0x15B0u;
+            std::memcpy(&ram8(rdram, address), &value, sizeof(value));
+        }
+
+        // Replaces addiu v0,v0,-1 at 0x14530C (the roulette TIME dial, cCockRoulette +0x4D0): every other frame.
+        void rouletteDial(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            static bool skip = false;
+            skip = !skip;
+            if (!skip)
+                SET_GPR_S32(ctx, 2, GPR_S32(ctx, 2) - 1);
+        }
     }
 
-    void installFramePatches(PS2Runtime &)
+    void installFramePatches(PS2Runtime &runtime)
     {
+        counterfinder::install(runtime);
         g_fps60 = envOn("GODHAND_FPS60");
         g_l3Dash = envOn("GODHAND_L3_DASH");
         ps2xRegisterHostHook("gh_frame_start", &frameStart);
         ps2xRegisterHostHook("gh_fps60_hitbox_compare", &hitboxCompare);
+        ps2xRegisterHostHook("gh_fps60_roulette_timer", &rouletteTimer);
+        ps2xRegisterHostHook("gh_fps60_roulette_dial", &rouletteDial);
         ps2xSetPatchFlag("frame_hook", true); // always: it also counts game frames for the F3 overlay
         ps2xSetPatchFlag("fps60", g_fps60);
         GH_INFO(Game, "frame rate: " << (g_fps60 ? "60 FPS mode (Fps60=1)" : "30 FPS, as on the PS2") << "; L3 dash: "
