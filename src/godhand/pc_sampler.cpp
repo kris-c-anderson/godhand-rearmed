@@ -34,13 +34,26 @@ namespace godhand::pcsampler
             const uint32_t base = g_ps2RecompiledFunctionTableBase;
             if (pc < base || pc >= g_ps2RecompiledFunctionTableEnd || (pc & 3u) != 0u)
                 return pc & ~0xFFu;
+            static std::unordered_map<uint32_t, uint32_t> cache;
+            auto cached = cache.find(pc);
+            if (cached != cache.end())
+                return cached->second;
             uint32_t slot = (pc - base) >> 2;
             const PS2Runtime::RecompiledFunction fn = g_ps2RecompiledFunctionTable[slot];
-            if (!fn)
-                return pc;
-            while (slot > 0u && g_ps2RecompiledFunctionTable[slot - 1u] == fn)
-                --slot;
-            return base + slot * 4u;
+            uint32_t result = pc;
+            if (fn)
+            {
+                // A long run of one pointer is a shared fallback (module code, stubs), not one function: capped.
+                uint32_t steps = 0;
+                while (slot > 0u && steps < 4096u && g_ps2RecompiledFunctionTable[slot - 1u] == fn)
+                {
+                    --slot;
+                    ++steps;
+                }
+                result = steps >= 4096u ? (pc & ~0xFFu) : base + slot * 4u;
+            }
+            cache.emplace(pc, result);
+            return result;
         }
     }
 

@@ -180,6 +180,12 @@ address = "0x0015DC5C"
 hook = "gh_hud_sprite_db30"
 flag = "widescreen"
 
+# func_002A53A8 (text glyphs, button icons in text): both corners converted, offset not added yet
+[[patches.hooks]]
+address = "0x002A5704"
+hook = "gh_hud_font_sprite"
+flag = "widescreen"
+
 # func_0015C410 (strips), before sw $a3,0x40($sp)
 [[patches.hooks]]
 address = "0x0015C780"
@@ -192,7 +198,7 @@ address = "0x002AAD44"
 hook = "gh_hud_id_begin"
 flag = "widescreen"
 
-# cIDBase_trans: an entry is about to be drawn ($a1)
+# cIDBase_trans: an entry is about to be drawn ($a1; noted for the F8 dump)
 [[patches.hooks]]
 address = "0x002AAE18"
 hook = "gh_hud_id_entry"
