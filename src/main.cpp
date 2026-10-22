@@ -173,9 +173,85 @@ namespace
         std::fflush(stderr);
     }
 
+    std::atomic<PS2Runtime *> g_crashRuntime{nullptr};
+
+    // A native crash in a normal (windowed) run: the exception, the module and offset of the faulting code, the guest
+    // PC the EE was at, and the host stack walked from the faulting context (function names when godhand.pdb is next
+    // to godhand.exe), written to the log before Windows' own crash handling goes on.
+    LONG WINAPI crashLogFilter(EXCEPTION_POINTERS *info)
+    {
+        static std::atomic<bool> entered{false};
+        if (!info || !info->ExceptionRecord || entered.exchange(true))
+            return EXCEPTION_CONTINUE_SEARCH;
+        const EXCEPTION_RECORD &record = *info->ExceptionRecord;
+        HANDLE process = GetCurrentProcess();
+        SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
+        SymInitialize(process, nullptr, TRUE);
+        auto describe = [&](DWORD64 address)
+        {
+            char text[512];
+            HMODULE module = nullptr;
+            char modulePath[MAX_PATH] = "?";
+            if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                   reinterpret_cast<LPCSTR>(address), &module))
+                GetModuleFileNameA(module, modulePath, MAX_PATH);
+            const char *moduleName = std::strrchr(modulePath, '\\') ? std::strrchr(modulePath, '\\') + 1 : modulePath;
+            alignas(SYMBOL_INFO) char storage[sizeof(SYMBOL_INFO) + 256] = {};
+            auto *symbol = reinterpret_cast<SYMBOL_INFO *>(storage);
+            symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+            symbol->MaxNameLen = 255;
+            DWORD64 displacement = 0;
+            IMAGEHLP_LINE64 line{};
+            line.SizeOfStruct = sizeof(line);
+            DWORD lineDisplacement = 0;
+            const bool haveSymbol = SymFromAddr(process, address, &displacement, symbol) != FALSE;
+            const bool haveLine = SymGetLineFromAddr64(process, address, &lineDisplacement, &line) != FALSE;
+            std::snprintf(text, sizeof(text), "%s+0x%llx %s+0x%llx %s:%lu", moduleName,
+                          static_cast<unsigned long long>(address - reinterpret_cast<DWORD64>(module)), haveSymbol ? symbol->Name : "?",
+                          static_cast<unsigned long long>(displacement), haveLine ? line.FileName : "", haveLine ? line.LineNumber : 0ul);
+            return std::string(text);
+        };
+        const DWORD64 faultAddress = reinterpret_cast<DWORD64>(record.ExceptionAddress);
+        std::fprintf(stderr, "[crash] unhandled exception 0x%08lX on thread %lu at %s\n", static_cast<unsigned long>(record.ExceptionCode),
+                     GetCurrentThreadId(), describe(faultAddress).c_str());
+        if (record.ExceptionCode == EXCEPTION_ACCESS_VIOLATION && record.NumberParameters >= 2)
+            std::fprintf(stderr, "[crash] %s address 0x%llx\n", record.ExceptionInformation[0] == 1 ? "write to" : record.ExceptionInformation[0] == 8 ? "execute at" : "read from",
+                         static_cast<unsigned long long>(record.ExceptionInformation[1]));
+        if (PS2Runtime *runtime = g_crashRuntime.load())
+        {
+            if (const R5900Context *ctx = runtime->eeScheduler().currentContext())
+                std::fprintf(stderr, "[crash] guest: pc 0x%08x ra 0x%08x sp 0x%08x\n", ctx->pc,
+                             static_cast<uint32_t>(_mm_cvtsi128_si32(ctx->r[31])), static_cast<uint32_t>(_mm_cvtsi128_si32(ctx->r[29])));
+        }
+        if (record.ExceptionCode != EXCEPTION_STACK_OVERFLOW && info->ContextRecord)
+        {
+            CONTEXT context = *info->ContextRecord;
+            STACKFRAME64 frame{};
+            frame.AddrPC.Offset = context.Rip;
+            frame.AddrPC.Mode = AddrModeFlat;
+            frame.AddrFrame.Offset = context.Rbp;
+            frame.AddrFrame.Mode = AddrModeFlat;
+            frame.AddrStack.Offset = context.Rsp;
+            frame.AddrStack.Mode = AddrModeFlat;
+            for (int i = 0; i < 40; ++i)
+            {
+                if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, GetCurrentThread(), &frame, &context, nullptr,
+                                 SymFunctionTableAccess64, SymGetModuleBase64, nullptr) ||
+                    frame.AddrPC.Offset == 0)
+                    break;
+                std::fprintf(stderr, "[crash]   #%d %s\n", i, describe(frame.AddrPC.Offset).c_str());
+            }
+        }
+        std::fflush(stdout);
+        std::fflush(stderr);
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+
     // GENERIC (Urban main.cpp:141-168).
     void installCrashReporter()
     {
+        if (!envFlag("GODHAND_HEADLESS", false))
+            SetUnhandledExceptionFilter(crashLogFilter);
         std::set_terminate([]()
                            {
                                std::fprintf(stderr, "[crash] std::terminate on thread %lu\n", GetCurrentThreadId());
@@ -681,6 +757,7 @@ int main(int argc, char *argv[])
         // Never destroyed: the process ends with std::_Exit while it is alive, so the time-limit thread can always use it.
         PS2Runtime &runtime = *new PS2Runtime();
         g_capRuntime.store(&runtime);
+        g_crashRuntime.store(&runtime);
 #if defined(PS2X_ENABLE_DEBUG_UI)
         // ImGui runtime debugger from PS2Recomp: F12 toggles it (F1 = Controls screen); GODHAND_DEBUG_UI=1 opens it at start-up.
         static PS2DebugPanel debugPanel;
