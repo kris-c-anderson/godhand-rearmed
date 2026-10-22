@@ -554,4 +554,14 @@ extern const uint32_t g_ps2RecompiledFunctionTableEnd;
 extern const uint32_t g_ps2RecompiledFunctionTableSlotCount;
 extern PS2Runtime::RecompiledFunction g_ps2RecompiledFunctionTable[];
 
+// Switchable patches compiled into the game code (ps2xRecomp [[patches.conditional]] / [[patches.hooks]]): each patch
+// site checks its flag's bit in g_ps2xPatchFlags. Flags are named in the recompiler config and switched by the game
+// layer (ps2xSetPatchFlag, before the guest starts or at any time); hooks are host functions registered by name.
+extern std::atomic<uint32_t> g_ps2xPatchFlags;
+uint32_t ps2xPatchFlagMask(const char *name);          // the flag's bit (allocated on first use; 32 flags at most)
+void ps2xSetPatchFlag(const char *name, bool enabled);
+bool ps2xPatchFlag(const char *name);
+void ps2xRegisterHostHook(const char *name, PS2Runtime::RecompiledFunction hook);
+PS2Runtime::RecompiledFunction ps2xHostHook(const char *name); // nullptr until registered
+
 #endif // PS2_RUNTIME_H

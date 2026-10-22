@@ -1,4 +1,5 @@
 #include "ps2recomp/ps2_recompiler.h"
+#include <fmt/format.h>
 #include "ps2recomp/instructions.h"
 #include "ps2recomp/types.h"
 #include "ps2recomp/elf_parser.h"
@@ -2175,6 +2176,28 @@ namespace ps2recomp
                 }
 
                 Instruction inst = m_decoder->decodeInstruction(address, rawInstruction, !m_config.lowMemoryMode);
+
+                // Switchable patches: only on plain instructions (no control flow), so both forms share the function's
+                // control flow and the choice can be made at run time.
+                const auto plain = [](const Instruction &i) { return !i.isBranch && !i.isJump && !i.isCall && !i.isReturn && !i.hasDelaySlot; };
+                if (auto conditional = m_config.conditionalPatches.find(address); conditional != m_config.conditionalPatches.end())
+                {
+                    Instruction alt = m_decoder->decodeInstruction(address, conditional->second.value, !m_config.lowMemoryMode);
+                    if (!plain(inst) || !plain(alt))
+                        throw std::runtime_error(fmt::format("conditional patch at 0x{:X}: branches and jumps cannot be switched", address));
+                    inst.patchFlag = conditional->second.flag;
+                    inst.patchAlt = std::make_shared<const Instruction>(alt);
+                    m_reporter.info("patch", fmt::format("Conditional patch at 0x{:X} (flag {})", address, inst.patchFlag));
+                }
+                if (auto hook = m_config.hookPatches.find(address); hook != m_config.hookPatches.end())
+                {
+                    if (!plain(inst) || inst.patchAlt)
+                        throw std::runtime_error(fmt::format("hook at 0x{:X}: only on a plain instruction without a conditional patch", address));
+                    inst.patchFlag = hook->second.flag;
+                    inst.hookName = hook->second.hook;
+                    inst.hookReplaces = hook->second.hookReplaces;
+                    m_reporter.info("patch", fmt::format("Hook {} at 0x{:X} (flag {})", inst.hookName, address, inst.patchFlag));
+                }
 
                 auto mmioIt = m_config.mmioByInstructionAddress.find(address);
                 if (mmioIt != m_config.mmioByInstructionAddress.end())

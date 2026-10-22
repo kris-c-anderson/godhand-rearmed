@@ -231,6 +231,29 @@ namespace ps2recomp
 
     std::string CodeGenerator::translateInstruction(const Instruction &inst, const MemoryAccessHint &memoryHint)
     {
+        // Switchable patch: both forms, chosen by the run-time flag (ps2xPatchFlagMask / g_ps2xPatchFlags).
+        if (!inst.patchFlag.empty())
+        {
+            Instruction plain = inst;
+            plain.patchFlag.clear();
+            plain.patchAlt.reset();
+            plain.hookName.clear();
+            const std::string original = translateInstruction(plain, memoryHint);
+            std::string patched;
+            if (inst.patchAlt)
+                patched = translateInstruction(*inst.patchAlt, memoryHint);
+            else
+            {
+                patched = fmt::format("{{ static PS2Runtime::RecompiledFunction hook = nullptr; if (!hook) hook = ps2xHostHook(\"{}\"); "
+                                      "if (hook) hook(rdram, ctx, runtime); }}",
+                                      inst.hookName);
+                if (!inst.hookReplaces)
+                    patched += "\n" + original;
+            }
+            return fmt::format("{{ static const uint32_t patchMask = ps2xPatchFlagMask(\"{}\");\n"
+                               "if (g_ps2xPatchFlags.load(std::memory_order_relaxed) & patchMask) {{\n{}\n}} else {{\n{}\n}} }}",
+                               inst.patchFlag, patched, original);
+        }
         const auto site = m_runtimeRelocationSites.find(inst.address);
         if (site == m_runtimeRelocationSites.end() || site->second == RuntimeRelocationKind::Jump26)
         {

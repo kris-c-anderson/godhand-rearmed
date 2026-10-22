@@ -1476,6 +1476,58 @@ namespace
     }
 }
 
+std::atomic<uint32_t> g_ps2xPatchFlags{0u};
+
+namespace
+{
+    std::mutex g_patchRegistryMutex;
+    std::vector<std::string> g_patchFlagNames; // bit i = g_patchFlagNames[i]
+    std::unordered_map<std::string, PS2Runtime::RecompiledFunction> g_hostHooks;
+}
+
+uint32_t ps2xPatchFlagMask(const char *name)
+{
+    std::lock_guard<std::mutex> lock(g_patchRegistryMutex);
+    const std::string key = name ? name : "";
+    for (size_t bit = 0; bit < g_patchFlagNames.size(); ++bit)
+        if (g_patchFlagNames[bit] == key)
+            return 1u << bit;
+    if (g_patchFlagNames.size() >= 32u)
+    {
+        std::cerr << "[patches] more than 32 patch flags; '" << key << "' stays off" << std::endl;
+        return 0u;
+    }
+    g_patchFlagNames.push_back(key);
+    return 1u << (g_patchFlagNames.size() - 1u);
+}
+
+void ps2xSetPatchFlag(const char *name, bool enabled)
+{
+    const uint32_t mask = ps2xPatchFlagMask(name);
+    if (enabled)
+        g_ps2xPatchFlags.fetch_or(mask, std::memory_order_relaxed);
+    else
+        g_ps2xPatchFlags.fetch_and(~mask, std::memory_order_relaxed);
+}
+
+bool ps2xPatchFlag(const char *name)
+{
+    return (g_ps2xPatchFlags.load(std::memory_order_relaxed) & ps2xPatchFlagMask(name)) != 0u;
+}
+
+void ps2xRegisterHostHook(const char *name, PS2Runtime::RecompiledFunction hook)
+{
+    std::lock_guard<std::mutex> lock(g_patchRegistryMutex);
+    g_hostHooks[name ? name : ""] = hook;
+}
+
+PS2Runtime::RecompiledFunction ps2xHostHook(const char *name)
+{
+    std::lock_guard<std::mutex> lock(g_patchRegistryMutex);
+    const auto it = g_hostHooks.find(name ? name : "");
+    return it == g_hostHooks.end() ? nullptr : it->second;
+}
+
 bool ps2x::setModuleFunction(uint32_t address, ps2x::ModuleFunction func)
 {
     uint32_t slot = 0u;

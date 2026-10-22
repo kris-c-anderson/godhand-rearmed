@@ -26,6 +26,7 @@
 #include "godhand/host_window.h"
 #include "godhand/log.h"
 #include "godhand/movie_watchdog.h"
+#include "godhand/frame_patches.h"
 #include "godhand/thread_policy.h"
 
 #if defined(PS2X_ENABLE_DEBUG_UI)
@@ -269,6 +270,8 @@ namespace
     };
     constexpr IniSetting kIniSettings[] = {
         {"game", "iso", "GODHAND_ISO"},
+        {"game", "fps60", "GODHAND_FPS60"},
+        {"game", "l3dash", "GODHAND_L3_DASH"},
         {"run", "headless", "GODHAND_HEADLESS"},
         {"run", "timelimitseconds", "GODHAND_TIME_LIMIT_SECONDS"},
         {"run", "dumpontimelimit", "GODHAND_DUMP_ON_TIME_LIMIT"},
@@ -727,8 +730,8 @@ int main(int argc, char *argv[])
         godhand::installHiresFlipCopy(runtime); // PS2X_GS_SCALE > 1 only: flip copy without the flicker filter
         godhand::button_prompts::install(runtime); // the button prompts show the bound keys (GODHAND_PROMPTS=0: PS2 art)
         godhand::installMovieWatchdog(runtime); // sweep R3: ending/movie-list movie polls cannot spin forever
-        // TODO(godhand): a "game_frame" observer on God Hand's main-loop function (ps2_host_display::noteGameFrame for the
-        // F3 overlay), as Urban did on 0x128dc0. The address is not known yet.
+        // 60 FPS mode, L3 dash, and the game-frame count for the F3 overlay (a hook at the top of the main loop).
+        godhand::installFramePatches(runtime);
         godhand::hangdump::setRuntime(&runtime);
         godhand::calltrace::installFromEnvironment(runtime);
         godhand::FunctionHooks::instance().logBindings();

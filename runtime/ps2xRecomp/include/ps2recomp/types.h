@@ -1,6 +1,7 @@
 #ifndef PS2RECOMP_TYPES_H
 #define PS2RECOMP_TYPES_H
 
+#include <memory>
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -46,6 +47,14 @@ namespace ps2recomp
         bool isMmio = false;
         uint32_t mmioAddress = 0;
         std::string disassembly;
+
+        // Switchable patch (config [[patches.conditional]] / [[patches.hooks]]): while the runtime patch flag
+        // `patchFlag` is on, this instruction runs as `patchAlt` (conditional) or calls the host hook `hookName`
+        // instead of (hookReplaces) or before itself. Only on instructions that are not branches or jumps.
+        std::string patchFlag;
+        std::shared_ptr<const Instruction> patchAlt;
+        std::string hookName;
+        bool hookReplaces = false;
 
         struct
         {
@@ -195,6 +204,17 @@ namespace ps2recomp
         bool patchCache = true;
         std::vector<std::string> skipFunctions;
         std::unordered_map<uint32_t, std::string> patches;
+        // Patches switched at run time by a named flag (ps2xSetPatchFlag): the instruction word to use instead, or a
+        // host function (ps2xRegisterHostHook) to call instead of / before the instruction.
+        struct SwitchablePatch
+        {
+            std::string flag;
+            uint32_t value = 0;     // conditional: the replacement instruction word
+            std::string hook;       // hook: the host function's registered name
+            bool hookReplaces = false;
+        };
+        std::unordered_map<uint32_t, SwitchablePatch> conditionalPatches;
+        std::unordered_map<uint32_t, SwitchablePatch> hookPatches;
         std::vector<std::string> stubImplementations;
         std::vector<std::string> entryPointHints;
         std::unordered_map<uint32_t, uint32_t> mmioByInstructionAddress;

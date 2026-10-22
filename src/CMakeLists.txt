@@ -37,6 +37,7 @@ set(GODHAND_HOST_SOURCES
     godhand/call_profile.cpp
     godhand/call_trace.cpp
     godhand/movie_watchdog.cpp
+    godhand/frame_patches.cpp
     godhand/function_hooks.cpp
     godhand/game_disc.cpp
     godhand/hang_dump.cpp

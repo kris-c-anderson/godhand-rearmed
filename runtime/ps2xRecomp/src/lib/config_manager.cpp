@@ -151,6 +151,39 @@ namespace ps2recomp
                 }
             }
 
+            if (data.contains("patches") && data.at("patches").is_table())
+            {
+                const auto &patches = toml::find(data, "patches");
+                const auto readAddress = [](const toml::value &entry, const char *key) -> uint32_t
+                {
+                    const auto &field = entry.at(key);
+                    if (field.is_string())
+                        return static_cast<uint32_t>(std::stoul(field.as_string(), nullptr, 0));
+                    return static_cast<uint32_t>(field.as_integer());
+                };
+                // [[patches.conditional]] address, value, flag: the instruction word `value` replaces the one at
+                // `address` while the run-time flag is on.
+                if (patches.contains("conditional") && patches.at("conditional").is_array())
+                    for (const auto &patch : patches.at("conditional").as_array())
+                    {
+                        RecompilerConfig::SwitchablePatch entry;
+                        entry.flag = toml::find<std::string>(patch, "flag");
+                        entry.value = readAddress(patch, "value");
+                        config.conditionalPatches[readAddress(patch, "address")] = entry;
+                    }
+                // [[patches.hooks]] address, hook, flag, replace: while the flag is on, the host function registered
+                // as `hook` runs before the instruction at `address`, or instead of it (replace = true).
+                if (patches.contains("hooks") && patches.at("hooks").is_array())
+                    for (const auto &patch : patches.at("hooks").as_array())
+                    {
+                        RecompilerConfig::SwitchablePatch entry;
+                        entry.flag = toml::find<std::string>(patch, "flag");
+                        entry.hook = toml::find<std::string>(patch, "hook");
+                        entry.hookReplaces = toml::find_or<bool>(patch, "replace", false);
+                        config.hookPatches[readAddress(patch, "address")] = entry;
+                    }
+            }
+
             if (data.contains("mmio") && data.at("mmio").is_table())
             {
                 const auto &mmioTable = toml::find(data, "mmio").as_table();

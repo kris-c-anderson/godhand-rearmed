@@ -38,3 +38,62 @@ stubs = []
 # guest RAM at run time (port_prep/runtime-relocs). The 208 R_MIPS_32 .data slots (godhand_data_import_slots.csv, kind
 # w32) are deliberately NOT listed: the recompiler accepts only j26/hi16/lo16 and the slots stay in guest RAM.
 runtime_relocations = "godhand_runtime_relocations.csv"
+
+# Switchable patches (ps2xRecomp: both forms are compiled in, the run-time flag picks one; src/godhand/frame_patches.cpp
+# sets the flags from godhand.ini and holds the hooks). "fps60": the 60 FPS mode, a port of the PCSX2 patch
+# SLUS-21503_6FB69282.pnach "60 Fps" (Puggsy + Claude Ai + Gemini). "frame_hook": always on.
+[patches]
+
+# Special attack speed, God Hand gauge drain, gene menu: 0.5 instead of 1.0 (lui at,0x3F80 -> 0x3F00).
+[[patches.conditional]]
+address = "0x00302D04"
+value = "0x3C013F00"
+flag = "fps60"
+
+[[patches.conditional]]
+address = "0x0010D694"
+value = "0x3C013F00"
+flag = "fps60"
+
+[[patches.conditional]]
+address = "0x0010B7B8"
+value = "0x3C013F00"
+flag = "fps60"
+
+# Enemy physics and animation speed 0.5 ...
+[[patches.conditional]]
+address = "0x0029059C"
+value = "0x3C013F00"
+flag = "fps60"
+
+# ... and the enemy animation back to normal: the step passed to 0x158288 is doubled (mov.s f12,f1 -> add.s f12,f1,f1;
+# the pnach does lui/mtc1/mul.s by 2.0 in a code cave).
+[[patches.conditional]]
+address = "0x00290584"
+value = "0x46010B00"
+flag = "fps60"
+
+# Dodge sync: the add.s f0,f0,f0 in the beql delay slot is not run.
+[[patches.conditional]]
+address = "0x0015765C"
+value = "0x00000000"
+flag = "fps60"
+
+# Roulette time: the timer store (sw v0,0x15B0(s1)) is dropped (the pnach stores zero to whatever $at holds instead).
+[[patches.conditional]]
+address = "0x001147CC"
+value = "0x00000000"
+flag = "fps60"
+
+# Hitbox sync: c.eq.s f0,f2 -> "same integer frame" (the pnach's code cave at 0xF0000).
+[[patches.hooks]]
+address = "0x002C81C0"
+hook = "gh_fps60_hitbox_compare"
+flag = "fps60"
+replace = true
+
+# Top of the main loop, after the wait for the next frame: frame divider, stick hold (fps60), L3 dash, frame count.
+[[patches.hooks]]
+address = "0x0030ADF4"
+hook = "gh_frame_start"
+flag = "frame_hook"
