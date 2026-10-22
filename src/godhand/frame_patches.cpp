@@ -216,6 +216,37 @@ namespace godhand
             SET_GPR_S32(ctx, 2, (g_gameFrame & 1u) ? value : value - 1);
         }
 
+        // The stick-wiggle button prompt (cCockActButton move, type 4, 0x13BF08..0x13C020) swings its stick icon a
+        // fixed 30 degrees and 5 units per frame (a 4-frame cycle). At 60 frames/s the swing of every other frame is
+        // undone: the icon's angle (+0x48) and x (+0x38) of the entry at +0xD8 and the swing direction (0x3BD6E0).
+        constexpr uint32_t kWiggleDirection = 0x3BD6E0u;
+        uint32_t g_wiggleEntry = 0, g_wiggleAngle = 0, g_wiggleX = 0;
+        uint8_t g_wiggleDirection = 0;
+
+        uint32_t ram32(uint8_t *rdram, uint32_t address)
+        {
+            uint32_t value;
+            std::memcpy(&value, &ram8(rdram, address), sizeof(value));
+            return value;
+        }
+
+        void wiggleBegin(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            g_wiggleEntry = ram32(rdram, GPR_U32(ctx, 6) + 0xD8u);
+            g_wiggleAngle = ram32(rdram, g_wiggleEntry + 0x48u);
+            g_wiggleX = ram32(rdram, g_wiggleEntry + 0x38u);
+            g_wiggleDirection = ram8(rdram, kWiggleDirection);
+        }
+
+        void wiggleEnd(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            if (!(g_gameFrame & 1u) || g_wiggleEntry == 0u || ram32(rdram, GPR_U32(ctx, 6) + 0xD8u) != g_wiggleEntry)
+                return;
+            std::memcpy(&ram8(rdram, g_wiggleEntry + 0x48u), &g_wiggleAngle, sizeof(g_wiggleAngle));
+            std::memcpy(&ram8(rdram, g_wiggleEntry + 0x38u), &g_wiggleX, sizeof(g_wiggleX));
+            ram8(rdram, kWiggleDirection) = g_wiggleDirection;
+        }
+
         // Replaces addiu v0,v0,-1 at 0x14530C (the roulette TIME dial, cCockRoulette +0x4D0): every other frame.
         void rouletteDial(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
@@ -237,6 +268,8 @@ namespace godhand
         ps2xRegisterHostHook("gh_fps60_roulette_dial", &rouletteDial);
         ps2xRegisterHostHook("gh_fps60_ui_anim", &uiAnimStep);
         ps2xRegisterHostHook("gh_fps60_button_timer", &buttonTimer);
+        ps2xRegisterHostHook("gh_fps60_wiggle_begin", &wiggleBegin);
+        ps2xRegisterHostHook("gh_fps60_wiggle_end", &wiggleEnd);
         ps2xSetPatchFlag("frame_hook", true); // always: it also counts game frames for the F3 overlay
         ps2xSetPatchFlag("fps60", g_fps60);
         GH_INFO(Game, "frame rate: " << (g_fps60 ? "60 FPS mode (Fps60=1)" : "30 FPS, as on the PS2") << "; L3 dash: "

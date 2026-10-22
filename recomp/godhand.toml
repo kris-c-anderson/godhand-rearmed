@@ -101,6 +101,29 @@ hook = "gh_fps60_button_timer"
 flag = "fps60"
 replace = true
 
+# Stick-wiggle button prompt (cCockActButton move, type 4): every other frame's swing is undone (before
+# lw a1,0xD4(a2), the case's first instruction; and at its end, before addiu v0,zero,-1).
+[[patches.hooks]]
+address = "0x0013BF08"
+hook = "gh_fps60_wiggle_begin"
+flag = "fps60"
+
+[[patches.hooks]]
+address = "0x0013C020"
+hook = "gh_fps60_wiggle_end"
+flag = "fps60"
+
+# Scrolling-arrow button prompts (types 5 and 6): half the step per frame (y +4.0 -> +2.0, x -6.0 -> -3.0).
+[[patches.conditional]]
+address = "0x0013C0A0"
+value = "0x3C014000"
+flag = "fps60"
+
+[[patches.conditional]]
+address = "0x0013C104"
+value = "0x3C014040"
+flag = "fps60"
+
 # Roulette TIME dial (cCockRoulette move, addiu v0,v0,-1 on +0x4D0, 95 frames): counts down every other frame.
 [[patches.hooks]]
 address = "0x0014530C"

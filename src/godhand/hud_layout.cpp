@@ -8,17 +8,18 @@
 //
 //   func_002A53A8 (text glyphs and the button icons inside text): its two corners at 0x2A5704, before the offset.
 //
-//   cIDBase_trans (0x2AAC28, every cIDBase layout: HUD widgets, menus, button bars): one layout ($s2) is one group,
-//   so all its quads (icons, labels, frames) share one anchor. Its entries' x positions give the anchor the first
-//   frame it is seen.
+//   cIDBase_trans (0x2AAC28, every cIDBase layout): layouts drawn by the in-game HUD widgets (isHudCaller, by the
+//   caller's return address) are groups that keep to the screen edges; all other 2D (menus, pause and status
+//   screens, text windows) is narrowed toward the screen centre, so it looks as on the PS2 in the middle 4:3.
 //
-//   cCockPlBar, cCockRader and cCockRoulette trans: the whole widget is one group, including their own gauge, blip
-//   and dial draws and every layout they draw.
+//   cCockPlBar, cCockRader and cCockRoulette trans: the whole widget is one HUD group, including their own gauge,
+//   blip and dial draws and every layout they draw.
 //
 // F6 writes every 2D primitive of the next frame to the log (drawer, caller, group, anchor, x before and after).
 //
-// An anchor comes from the group's x extent in the previous frame (before narrowing): narrower than 12% of the screen =
-// its own centre; else by the third its centre is in: the screen's left edge, centre or right edge.
+// A HUD group's anchor comes from its x extent in the previous frame (before narrowing): narrower than 12% of the
+// screen = its own centre (button prompts over things in the 3D view); else by the third its centre is in: the
+// screen's left edge, centre or right edge.
 #include "godhand/hud_layout.h"
 #include "godhand/log.h"
 #include "ps2_runtime.h"
@@ -223,11 +224,12 @@ namespace godhand::hud
             }
             else
             {
-                noteLoose(caller, x0, x1, y0, y1);
-                dumpPrim(tag, caller, x0, x1, y0, y1, "loose", none);
-                return;
+                if (!g_inIdTrans)
+                    noteLoose(caller, x0, x1, y0, y1);
+                anchor = 0.5f * width; // menus and everything else: the PS2's 4:3 layout, in the middle
             }
-            dumpPrim(tag, caller, x0, x1, y0, y1, "narrowed", anchor);
+            dumpPrim(tag, caller, x0, x1, y0, y1, g_ctx.active ? "hud" : "centred", anchor);
+            (void)none;
             for (int i = 0; i < n; ++i)
             {
                 const float x = anchor + (xs[i] - anchor) * g_k;
@@ -273,13 +275,33 @@ namespace godhand::hud
             }
             else
             {
-                noteLoose(caller, xs, xs, 0.0f, 0.0f);
-                dumpPrim("strip", caller, xs, xs, 0.0f, 0.0f, "loose", std::nanf(""));
-                return;
+                if (!g_inIdTrans)
+                    noteLoose(caller, xs, xs, 0.0f, 0.0f);
+                anchor = 0.5f * width;
             }
-            dumpPrim("strip", caller, xs, xs, 0.0f, 0.0f, "narrowed", anchor);
+            dumpPrim("strip", caller, xs, xs, 0.0f, 0.0f, g_ctx.active ? "hud" : "centred", anchor);
             const float x = anchor + (xs - anchor) * g_k;
             SET_GPR_S32(ctx, 7, static_cast<int32_t>(std::lround(x * 16.0f)) + offset);
+        }
+
+        // Return addresses of the cIDBase_trans calls in the HUD widgets' trans functions: cCockActButton (button
+        // prompts, 0x13C168), cCockBossBar (0x13CF20), cCockItem (0x13E6E0), cCockLastBossBar (0x13EBA0),
+        // cCockMiddleBoss (0x140638). cCockPlBar, cCockRader and cCockRoulette are regions of their own.
+        bool isHudCaller(uint32_t ra)
+        {
+            switch (ra)
+            {
+            case 0x0013C18Cu:
+            case 0x0013CFA0u:
+            case 0x0013E728u:
+            case 0x0013E73Cu:
+            case 0x0013EC38u:
+            case 0x001406CCu:
+            case 0x001406FCu:
+                return true;
+            default:
+                return false;
+            }
         }
 
         // cIDBase_trans at the start of its entry loop: $s2 = the layout. One layout is one group: its entries (icons,
@@ -289,6 +311,14 @@ namespace godhand::hud
             g_inIdTrans = true;
             if (g_region == Region::Forced)
                 return; // g_ctx is the region's
+            // Only the in-game HUD widgets (by who called cIDBase_trans) keep to the screen edges; every other layout
+            // (menus, the pause and status screens) is drawn as on the PS2, in the middle 4:3 of the screen.
+            const uint32_t caller = read32(rdram, GPR_U32(ctx, 29) + 0x40u);
+            if (!isHudCaller(caller))
+            {
+                g_ctx = Context{};
+                return;
+            }
             const uint32_t layout = GPR_U32(ctx, 18) & 0x01FFFFFFu;
             const float width = screenWidth(rdram);
             float fallback = 0.5f * width;
@@ -398,7 +428,7 @@ namespace godhand::hud
             std::sort(rows.begin(), rows.end(), [](const auto &a, const auto &b)
                       { return a.second.prims > b.second.prims; });
             std::ostringstream out;
-            out << "HUD (anchored): 2D drawn outside any widget, left stretched, by caller (x,y range):";
+            out << "HUD (anchored): 2D drawn outside any layout (centred), by caller (x,y range):";
             const size_t shown = std::min<size_t>(rows.size(), 16);
             for (size_t i = 0; i < shown; ++i)
             {
@@ -421,7 +451,7 @@ namespace godhand::hud
         case Layout::Centered:
             return false;
         default:
-            return !g_inIdTrans; // cIDBase text is narrowed with its widget
+            return false; // all text goes through the 2D narrowing
         }
     }
 

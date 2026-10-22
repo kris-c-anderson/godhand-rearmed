@@ -739,7 +739,11 @@ int main(int argc, char *argv[])
     GSThreadedBackend::SetEnabledByDefault(true);
     GSThreadedBackend::SetGpuByDefault(true);
     GSGpuBackend::SetAsyncPresentDefault(true);
-    ps2x::asyncvif::setHostPacingDefault(true); // only matters with PS2X_MTVU=1 (MTVU itself stays off by default)
+    // MTVU (VU1 and the GIF on threads of their own, as PCSX2's MTVU) on by default since 2026-10-22: in gameplay the EE
+    // thread spent ~27% in VU1 and ~5% in VIF/GIF and had speed drops into the 80s at 60 FPS with widescreen; with
+    // MTVU it waits ~70% of the time and held 100%. PS2X_MTVU=0 (godhand.ini [Runtime]) runs VU1 on the EE thread.
+    ps2x::asyncvif::setDefaultEnabled(true);
+    ps2x::asyncvif::setHostPacingDefault(true);
     EeScheduler::setHostPacingDefault(true);
 
     // Hidden runs: no visible window, no sound, no monitor-driven vsync, no dialogs.
