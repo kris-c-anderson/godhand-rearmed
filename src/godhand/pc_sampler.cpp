@@ -19,6 +19,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <timeapi.h> // timeBeginPeriod (left out by WIN32_LEAN_AND_MEAN)
 #pragma comment(lib, "winmm.lib")
 #endif
 
