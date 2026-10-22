@@ -80,8 +80,8 @@ namespace godhand
             callprofile::report(100000);
         }
 
-        // L3 alone (pad buttons == 2): a dash, as a quick double tap of the left stick forward and then forward held
-        // while L3 is. The pnach this comes from wrote "stick up" every frame from PCSX2's patch engine, between the
+        // L3 alone (pad buttons == 2): a dash, as a quick double tap of the left stick forward (from centre) and then
+        // forward held while L3 is. The pnach this comes from wrote "stick up" every frame from PCSX2's patch engine, between the
         // game's own pad reads, which the game saw as tapping; here the game reads the byte once and kept seeing a
         // plain "up" (Gene walked). Each step lasts 2 frames at 30 frames/s (4 in the 60 FPS mode). Written after the
         // stick hold, and marked as injected so the next frame puts the reading back.
@@ -92,7 +92,7 @@ namespace godhand
             if (!g_l3Dash)
                 return;
             if (!g_fps60) // the 60 FPS stick hold already puts stale injected values back
-                for (int axis : {1, 3})
+                for (int axis = 0; axis < 4; ++axis)
                 {
                     if (g_stickInjected[axis] >= 0 && ram8(rdram, kStickBytes[axis]) == static_cast<uint8_t>(g_stickInjected[axis]))
                         ram8(rdram, kStickBytes[axis]) = g_stickRaw[axis];
@@ -106,10 +106,17 @@ namespace godhand
                 return;
             }
             const uint32_t step = g_fps60 ? 4u : 2u;
-            const uint32_t phase = g_dashFrames++ / step; // 0 forward, 1 neutral, 2.. forward
-            const uint8_t value = phase == 1u ? 0x80u : 0x00u;
-            for (int axis : {1, 3})
+            const uint32_t phase = g_dashFrames++ / step; // 0 neutral, 1 forward, 2 neutral, 3.. forward
+            // While the tap is being made the stick is centred sideways too (a diagonal is not a forward tap, which is
+            // why a dash started while walking did nothing); once dashing, sideways is the player's again.
+            const bool tapping = phase < 3u;
+            const uint8_t forward = (phase == 1u || phase >= 3u) ? 0x00u : 0x80u;
+            for (int axis = 0; axis < 4; ++axis)
             {
+                const bool vertical = (axis & 1) != 0;
+                if (!vertical && !tapping)
+                    continue;
+                const uint8_t value = vertical ? forward : 0x80u;
                 if (g_stickInjected[axis] < 0)
                     g_stickRaw[axis] = ram8(rdram, kStickBytes[axis]);
                 ram8(rdram, kStickBytes[axis]) = value;
