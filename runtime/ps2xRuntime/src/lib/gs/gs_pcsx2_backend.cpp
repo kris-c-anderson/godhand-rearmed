@@ -351,6 +351,7 @@ bool GSPcsx2Backend::EnsureOpen()
         {"PS2X_PCSX2_DITHERING", "dithering", nullptr},
         {"PS2X_PCSX2_BLENDING", "blending", nullptr},
         {"PS2X_PCSX2_TEXTURE_PRECACHE", "texture_precache", nullptr},
+        {"PS2X_PCSX2_ASPECT", "aspect", nullptr},
     };
     std::string options;
     for (const auto &option : kOptions)

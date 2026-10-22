@@ -37,6 +37,8 @@ namespace
     }
 
     // Pcsx2GsOpenParams::options: "key=value;key=value".
+    float g_customAspect = 0.0f; // options "aspect=<width/height>": the image shown in that shape (0 = the open's choice)
+
     void ApplyOptions(Pcsx2Config::GSOptions &options, const char *text)
     {
         if (!text)
@@ -53,6 +55,13 @@ namespace
             const std::string_view key = item.substr(0, eq);
             const std::string text = std::string(item.substr(eq + 1));
             const int value = std::atoi(text.c_str());
+            if (key == "aspect")
+            {
+                // A widescreen game (the port widens the camera itself): PCSX2's patch-driven custom aspect ratio.
+                const float aspect = static_cast<float>(std::atof(text.c_str()));
+                g_customAspect = aspect > 0.5f && aspect < 5.0f ? aspect : 0.0f;
+                continue;
+            }
             if (key == "texture_dir")
             {
                 // Replacement textures (PNG/DDS in <dir>/replacements), loaded as the game uses them.
@@ -114,7 +123,11 @@ namespace
         options.UpscaleMultiplier = std::max(1.0f, params->scale);
         options.AspectRatio = params->stretch ? AspectRatioType::Stretch : AspectRatioType::R4_3;
         ApplyGameFixes(options);
+        g_customAspect = 0.0f;
         ApplyOptions(options, params->options);
+        if (g_customAspect > 0.0f && !params->stretch)
+            options.AspectRatio = AspectRatioType::RAuto4_3_3_2;
+        EmuConfig.CurrentCustomAspectRatio = g_customAspect;
         EmuConfig.GS = options;
         // The presentation reads the current aspect ratio (PCSX2's VMManager copies it from GS.AspectRatio at boot);
         // without it [Video] Stretch=1 still drew 4:3 (PROGRESS §100).
@@ -312,4 +325,6 @@ extern "C" __declspec(dllexport) const Pcsx2GsApi *pcsx2gs_get_api(uint32_t vers
 extern "C" __declspec(dllexport) void pcsx2gs_set_aspect(uint32_t mode)
 {
     EmuConfig.CurrentAspectRatio = mode == 2u ? AspectRatioType::Stretch : mode == 1u ? AspectRatioType::R16_9 : AspectRatioType::R4_3;
+    if (mode == 0u && g_customAspect > 0.0f)
+        EmuConfig.CurrentAspectRatio = AspectRatioType::RAuto4_3_3_2; // the widescreen shape stays
 }

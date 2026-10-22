@@ -30,7 +30,8 @@ typedef struct Pcsx2GsOpenParams
     //   present_filter=0 off / 1 smooth / 2 sharp, dithering=0 off / 1 scaled / 2 unscaled / 3 force 32 bit,
     //   blending=0..5 (minimum ... maximum),
     //   texture_dir=<folder holding replacements/> (HD textures, PCSX2's names and formats: PNG, DDS),
-    //   texture_precache=0/1 (load all of them at start instead of as the game uses them)
+    //   texture_precache=0/1 (load all of them at start instead of as the game uses them),
+    //   aspect=<width/height> (the picture's shape when the game renders widescreen itself, e.g. 1.7778)
     const char *options;
 } Pcsx2GsOpenParams;
 

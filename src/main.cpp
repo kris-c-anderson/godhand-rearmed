@@ -27,6 +27,7 @@
 #include "godhand/log.h"
 #include "godhand/movie_watchdog.h"
 #include "godhand/frame_patches.h"
+#include "godhand/widescreen.h"
 #include "godhand/thread_policy.h"
 
 #if defined(PS2X_ENABLE_DEBUG_UI)
@@ -282,6 +283,7 @@ namespace
         {"video", "internalresolution", "PS2X_GS_SCALE"},
         {"video", "startmaximized", "GODHAND_START_MAXIMIZED"},
         {"video", "windowsize", "PS2X_WINDOW_SIZE"},
+        {"video", "aspectratio", "GODHAND_ASPECT"},
         {"video", "startfullscreen", "GODHAND_START_FULLSCREEN"},
     };
 
@@ -694,6 +696,7 @@ int main(int argc, char *argv[])
             &debugPanel);
 #endif
         ps2_host_display::setStartMaximized(!headless && envFlag("GODHAND_START_MAXIMIZED", false));
+        godhand::installWidescreen(); // the picture's shape: before the window is made
         ps2_host_display::setStartFullscreen(!headless && envFlag("GODHAND_START_FULLSCREEN", false));
         if (!runtime.initialize(godhand::kGameTitle))
         {
