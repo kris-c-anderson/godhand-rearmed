@@ -15,7 +15,7 @@
 //   cCockPlBar, cCockRader and cCockRoulette trans: the whole widget is one group, including their own gauge, blip
 //   and dial draws and every layout they draw.
 //
-// F8 writes every 2D primitive of the next frame to the log (drawer, caller, group, anchor, x before and after).
+// F6 writes every 2D primitive of the next frame to the log (drawer, caller, group, anchor, x before and after).
 //
 // An anchor comes from the group's x extent in the previous frame (before narrowing): narrower than 12% of the screen =
 // its own centre; else by the third its centre is in: the screen's left edge, centre or right edge.
@@ -166,7 +166,7 @@ namespace godhand::hud
             loose.y1 = std::max(loose.y1, y1);
         }
 
-        // F8: every 2D primitive of one frame written to the log (which drawer, caller, group, anchor, x before/after).
+        // F6: every 2D primitive of one frame written to the log (which drawer, caller, group, anchor, x before/after).
         bool g_dumpArmed = false, g_dumping = false;
         uint32_t g_entry = 0; // the cIDBase entry being drawn
         std::vector<std::string> g_dump;
@@ -314,7 +314,7 @@ namespace godhand::hud
             g_lastEntry = g_ctx;
         }
 
-        // cIDBase_trans, before an entry is drawn: $a1 = the entry (only noted, for the F8 dump).
+        // cIDBase_trans, before an entry is drawn: $a1 = the entry (only noted, for the F6 dump).
         void idEntry(uint8_t *, R5900Context *ctx, PS2Runtime *) { g_entry = GPR_U32(ctx, 5); }
 
         void idEnd(uint8_t *, R5900Context *, PS2Runtime *)
@@ -439,7 +439,7 @@ namespace godhand::hud
         if (g_dumping)
         {
             std::ostringstream out;
-            out << "HUD F8 dump (" << layoutName(g_layout) << ", k " << g_k << "): " << g_dump.size() << " 2D primitives";
+            out << "HUD F6 dump (" << layoutName(g_layout) << ", k " << g_k << "): " << g_dump.size() << " 2D primitives";
             for (const std::string &line : g_dump)
                 out << "\n    " << line;
             GH_INFO(Game, out.str());
@@ -452,8 +452,8 @@ namespace godhand::hud
             g_dumping = true;
         }
 #if defined(_WIN32)
-        static bool f7 = false, f8 = false;
-        if (keyPressed(VK_F8, f8))
+        static bool f7 = false, f6 = false;
+        if (keyPressed(VK_F6, f6))
             g_dumpArmed = true;
         if (keyPressed(VK_F7, f7))
 #else
@@ -491,6 +491,6 @@ namespace godhand::hud
         ps2xRegisterHostHook("gh_hud_roulette_begin", &regionBegin<kRoulette, Region::Forced>);
         ps2xRegisterHostHook("gh_hud_region_end", &regionEnd);
         if (wide)
-            GH_INFO(Game, "HUD layout: " << layoutName(g_layout) << " (F7 cycles anchored / centered / off; F8 writes one frame's 2D to the log)");
+            GH_INFO(Game, "HUD layout: " << layoutName(g_layout) << " (F7 cycles anchored / centered / off; F6 writes one frame's 2D to the log)");
     }
 }

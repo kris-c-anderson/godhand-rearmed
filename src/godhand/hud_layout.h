@@ -6,7 +6,7 @@
 // comes out stretched. This narrows the 2D again where it is drawn (the Gp_draw_* primitives every HUD, menu and text
 // quad goes through), each element about its own anchor, so circles stay round and HUD parts stay where they were.
 //
-// [Video] HudLayout (GODHAND_HUD), F7 cycles it while playing (F8 logs one frame's 2D draws):
+// [Video] HudLayout (GODHAND_HUD), F7 cycles it while playing (F6 logs one frame's 2D draws):
 //   anchored  HUD widgets on the left third narrowed toward the screen's left edge, on the right third toward the
 //             right edge, others toward the centre; small ones (button prompts) about their own centre. Widgets: the game's cIDBase layouts, the player
 //             bar, the radar and the roulette menu. Default.

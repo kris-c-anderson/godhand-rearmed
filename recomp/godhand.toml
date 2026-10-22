@@ -212,7 +212,7 @@ address = "0x002AAD44"
 hook = "gh_hud_id_begin"
 flag = "widescreen"
 
-# cIDBase_trans: an entry is about to be drawn ($a1; noted for the F8 dump)
+# cIDBase_trans: an entry is about to be drawn ($a1; noted for the F6 dump)
 [[patches.hooks]]
 address = "0x002AAE18"
 hook = "gh_hud_id_entry"
