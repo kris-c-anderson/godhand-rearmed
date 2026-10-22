@@ -281,6 +281,7 @@ namespace
         {"video", "renderer", "PS2X_GS_RENDERER"},
         {"video", "internalresolution", "PS2X_GS_SCALE"},
         {"video", "startmaximized", "GODHAND_START_MAXIMIZED"},
+        {"video", "windowsize", "PS2X_WINDOW_SIZE"},
         {"video", "startfullscreen", "GODHAND_START_FULLSCREEN"},
     };
 

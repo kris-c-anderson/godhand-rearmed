@@ -1888,7 +1888,24 @@ namespace
     }
 }
 
+static int run(int argc, char **argv);
+
 int main(int argc, char **argv)
+{
+    // Every line goes out at once: a crash still leaves the last unit compiled in the log.
+    std::cout << std::unitbuf;
+    try
+    {
+        return run(argc, argv);
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "vu1_recomp: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+static int run(int argc, char **argv)
 {
     if (argc < 3)
     {
@@ -1975,6 +1992,7 @@ int main(int argc, char **argv)
             std::cerr << path << ": bad upload (address " << address << ", " << bytes.size() << " bytes)\n";
             return 1;
         }
+        std::cout << "compiling " << name << " (" << bytes.size() / 8u << " pairs at " << hx(address * 8u) << ")\n";
         const std::string identity = std::to_string(address) + ":" + std::string(bytes.begin(), bytes.end());
         if (!unitBytesSeen.insert(identity).second)
             continue; // the same upload found twice

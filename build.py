@@ -813,7 +813,21 @@ def vu(args=()):
             return 1
     if build("vu1_recomp"):
         return 1
-    return run([VU1_RECOMP, VU_IMAGES, GENERATED / "vu1"])
+    # Into a fresh folder first: generated/vu1 is replaced only by a complete run, so a failed run leaves the last
+    # good VU code in place (the build goes on with it, with a warning).
+    staging = ROOT / "build" / "vu1_staging"
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True)
+    # vu1_recomp links the runtime library, which loads SDL3.dll when controllers go through SDL: it is in bin/.
+    env = dict(os.environ)
+    env["PATH"] = str(BIN) + os.pathsep + env.get("PATH", "")
+    code = run([VU1_RECOMP, VU_IMAGES, staging], env=env)
+    if code:
+        print(f"vu1_recomp failed (exit code {code & 0xFFFFFFFF:#010x}); keeping the VU code of the last good run in "
+              f"{GENERATED / 'vu1'}.")
+        return 0 if (GENERATED / "vu1" / "vu1_programs.cpp").exists() else code
+    sync_tree(staging, GENERATED / "vu1")
+    return 0
 
 
 COMMANDS = {
