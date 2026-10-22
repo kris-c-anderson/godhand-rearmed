@@ -16,7 +16,8 @@
 //   29059C lui at,0x3F00 (enemy physics x0.5)     conditional patch
 //   290584 hook -> F0038 (enemy animation x2)     conditional patch: mov.s f12,f1 -> add.s f12,f1,f1 (f1 * 2)
 //   30ADF4 hook -> D0020 (left stick)             frameStart: a stick axis at full deflection last frame is held
-//                                                  there for one more frame (state in kStick* instead of 0xD0200)
+//                                                  there for one more frame (state in g_stick* instead of 0xD0200;
+//                                                  without the pnach's input loop, see frameStart)
 //   D05E8242 == 2: 005E8147 = 0, 005E81C7 = 0     frameStart with L3Dash: L3 held pushes the left stick fully
 //   (L3 dash, every vblank)                        forward
 //
@@ -24,6 +25,7 @@
 // next frame (0x30ADD8..0x30ADF0), where the pnach's stick hook ran; the per-vblank writes run there too, once per
 // game frame.
 #include "godhand/frame_patches.h"
+#include "godhand/call_profile.h"
 #include "godhand/log.h"
 #include "ps2_runtime_macros.h" // FPU_CVT_W_S (the recompiled CVT.W.S)
 #include "runtime/ps2_display_options.h"
@@ -42,6 +44,9 @@ namespace godhand
         bool g_l3Dash = false;
         uint8_t g_stickHeld[4] = {}; // the axis was at 0 or 0xFF last frame
         uint8_t g_stickLast[4] = {};
+        int g_stickInjected[4] = {-1, -1, -1, -1}; // the value written over the game's last frame (-1: none)
+        uint8_t g_stickRaw[4] = {0x80u, 0x80u, 0x80u, 0x80u};
+        uint32_t g_staleRestores = 0, g_holds = 0, g_frames = 0;
 
         bool envOn(const char *name)
         {
@@ -54,9 +59,27 @@ namespace godhand
             return rdram[address & (PS2_RAM_SIZE - 1u)];
         }
 
+        // GODHAND_CALL_PROFILE=1 with GODHAND_CALL_PROFILE_EVERY=<game frames>: a call count report of every function
+        // called in each window of that many frames (finding the code behind something seen on screen: compare the
+        // windows where it shows with the others).
+        void profileWindow()
+        {
+            static const uint32_t every = []
+            {
+                const char *value = std::getenv("GODHAND_CALL_PROFILE_EVERY");
+                return value ? static_cast<uint32_t>(std::strtoul(value, nullptr, 10)) : 0u;
+            }();
+            static uint64_t frames = 0, window = 0;
+            if (every == 0u || ++frames % every != 0u)
+                return;
+            GH_INFO(Game, "call profile window " << ++window << " (game frames " << frames - every << ".." << frames << ")");
+            callprofile::report(100000);
+        }
+
         void frameStart(uint8_t *rdram, R5900Context *, PS2Runtime *)
         {
             ps2_host_display::noteGameFrame();
+            profileWindow();
             if (g_l3Dash)
             {
                 uint16_t buttons = 0;
@@ -70,21 +93,44 @@ namespace godhand
             if (!g_fps60)
                 return;
             ram8(rdram, kFrameDivider) = 1u;
+            // The pnach writes the held value over the game's and reads it back the next frame as if it came from the
+            // pad. The game does not rewrite these bytes every frame here, so a written 0xFF came back as a new full
+            // deflection and was held again, forever (stick stuck at full right/left; the pnach's "input loop" with
+            // PCSX2 overclock). A byte that still holds what was written last frame is the game's earlier reading:
+            // it is put back and used as the reading. A held value is written only when it differs from the reading.
             for (int axis = 0; axis < 4; ++axis)
             {
                 uint8_t &value = ram8(rdram, kStickBytes[axis]);
+                if (g_stickInjected[axis] >= 0 && value == static_cast<uint8_t>(g_stickInjected[axis]))
+                {
+                    value = g_stickRaw[axis];
+                    ++g_staleRestores;
+                }
+                g_stickInjected[axis] = -1;
+                const uint8_t raw = value;
+                g_stickRaw[axis] = raw;
                 const bool wasHeld = g_stickHeld[axis] != 0u;
                 const uint8_t last = g_stickLast[axis];
-                if (value == 0u || value == 0xFFu)
+                if (raw == 0u || raw == 0xFFu)
                 {
                     g_stickHeld[axis] = 1u;
-                    g_stickLast[axis] = value;
+                    g_stickLast[axis] = raw;
                 }
                 else
                     g_stickHeld[axis] = 0u;
-                if (wasHeld)
+                if (wasHeld && raw != last)
+                {
                     value = last;
+                    g_stickInjected[axis] = last;
+                    ++g_holds;
+                }
             }
+            if (++g_frames % 3600u == 0u) // once a minute at 60 frames/s
+                GH_INFO(Game, "fps60 stick hold: " << g_holds << " held frames, " << g_staleRestores
+                                                   << " readings restored in the last 3600 frames; left stick now "
+                                                   << int(ram8(rdram, kStickBytes[0])) << "," << int(ram8(rdram, kStickBytes[1])));
+            if (g_frames % 3600u == 0u)
+                g_holds = g_staleRestores = 0u;
         }
 
         // Replaces c.eq.s f0,f2 at 0x2C81C0: the condition is "same integer frame" (cvt.w.s of both).
