@@ -80,6 +80,43 @@ namespace godhand
             callprofile::report(100000);
         }
 
+        // L3 alone (pad buttons == 2): a dash, as a quick double tap of the left stick forward and then forward held
+        // while L3 is. The pnach this comes from wrote "stick up" every frame from PCSX2's patch engine, between the
+        // game's own pad reads, which the game saw as tapping; here the game reads the byte once and kept seeing a
+        // plain "up" (Gene walked). Each step lasts 2 frames at 30 frames/s (4 in the 60 FPS mode). Written after the
+        // stick hold, and marked as injected so the next frame puts the reading back.
+        uint32_t g_dashFrames = 0; // frames since L3 went down (0 = not held)
+
+        void l3Dash(uint8_t *rdram)
+        {
+            if (!g_l3Dash)
+                return;
+            if (!g_fps60) // the 60 FPS stick hold already puts stale injected values back
+                for (int axis : {1, 3})
+                {
+                    if (g_stickInjected[axis] >= 0 && ram8(rdram, kStickBytes[axis]) == static_cast<uint8_t>(g_stickInjected[axis]))
+                        ram8(rdram, kStickBytes[axis]) = g_stickRaw[axis];
+                    g_stickInjected[axis] = -1;
+                }
+            uint16_t buttons = 0;
+            std::memcpy(&buttons, &ram8(rdram, kPadButtons), sizeof(buttons));
+            if (buttons != 2u)
+            {
+                g_dashFrames = 0;
+                return;
+            }
+            const uint32_t step = g_fps60 ? 4u : 2u;
+            const uint32_t phase = g_dashFrames++ / step; // 0 forward, 1 neutral, 2.. forward
+            const uint8_t value = phase == 1u ? 0x80u : 0x00u;
+            for (int axis : {1, 3})
+            {
+                if (g_stickInjected[axis] < 0)
+                    g_stickRaw[axis] = ram8(rdram, kStickBytes[axis]);
+                ram8(rdram, kStickBytes[axis]) = value;
+                g_stickInjected[axis] = value;
+            }
+        }
+
         void frameStart(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             pcsampler::noteMainContext(ctx);
@@ -88,18 +125,11 @@ namespace godhand
             profileWindow();
             counterfinder::onFrame(rdram);
             hud::onFrame(rdram);
-            if (g_l3Dash)
-            {
-                uint16_t buttons = 0;
-                std::memcpy(&buttons, &ram8(rdram, kPadButtons), sizeof(buttons));
-                if (buttons == 2u)
-                {
-                    ram8(rdram, kStickBytes[1]) = 0u;
-                    ram8(rdram, kStickBytes[3]) = 0u;
-                }
-            }
             if (!g_fps60)
+            {
+                l3Dash(rdram);
                 return;
+            }
             ram8(rdram, kFrameDivider) = 1u;
             // The pnach writes the held value over the game's and reads it back the next frame as if it came from the
             // pad. The game does not rewrite these bytes every frame here, so a written 0xFF came back as a new full
@@ -139,6 +169,7 @@ namespace godhand
                                                    << int(ram8(rdram, kStickBytes[0])) << "," << int(ram8(rdram, kStickBytes[1])));
             if (g_frames % 3600u == 0u)
                 g_holds = g_staleRestores = 0u;
+            l3Dash(rdram);
         }
 
         // Replaces c.eq.s f0,f2 at 0x2C81C0: the condition is "same integer frame" (cvt.w.s of both).
