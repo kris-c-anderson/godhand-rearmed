@@ -73,8 +73,8 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed and when.
 Open a terminal (PowerShell) and run these one at a time:
 
 ```powershell
-git clone https://github.com/kris-c-anderson/god-hand-rearmed.git
-cd god-hand-rearmed
+git clone https://github.com/kris-c-anderson/godhand-rearmed.git
+cd godhand-rearmed
 copy "D:\path\to\God Hand (USA).iso" game\
 python -I build.py generate
 python -I tools\snr2\snr2.py --iso "game\God Hand (USA).iso" extract
