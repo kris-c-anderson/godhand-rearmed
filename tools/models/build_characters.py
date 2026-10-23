@@ -4,9 +4,11 @@
 
 Each assets/characters/<id>/character.json lists the disc files it replaces:
     {"files": {"pl/pl00.dat": {"nodes": "xavier_nodes.scr", "textures": "xavier_textures.tm3"},
-               "pl/pl01.dat": {"empty": true}}}
+               "pl/pl01.dat": {"nodes": "xavier_coat.scr", "textures": "xavier_textures.tm3", "keep": [],
+                               "append_textures": false}}}
 "nodes"/"textures": the mod's own model nodes and textures merged into the game's file (its skeleton, motions and the
-God Hand arm nodes stay the game's); "empty": every model node of that file drawn as nothing. The output is built
+"keep" nodes, by default the God Hand arm, stay the game's; textures replace the game's of the same name, new names
+are appended unless "append_textures" is false); "empty": every model node of that file drawn as nothing. The output is built
 from your disc, so like the rest of the build it stays private. Standard library only.
 """
 import json
@@ -44,7 +46,8 @@ def build(iso, out, only=()):
             else:
                 nodes = open(os.path.join(folder, how["nodes"]), "rb").read()
                 texs = open(os.path.join(folder, how["textures"]), "rb").read()
-                data = ghmodel.merge_model(game, nodes, texs, tuple(how.get("keep", ghmodel.KEEP)))
+                data = ghmodel.merge_model(game, nodes, texs, tuple(how.get("keep", ghmodel.KEEP)),
+                                           how.get("append_textures", True))
             if len(data) > len(game):
                 print("  warning: %s/%s is %d bytes, the game's %d (it must fit the game's place on the disc)" % (cid, rel, len(data), len(game)))
             target = os.path.join(dest, *rel.split("/"))

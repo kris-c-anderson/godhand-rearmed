@@ -1,6 +1,6 @@
 {
   "files": {
     "pl/pl00.dat": {"nodes": "xavier_nodes.scr", "textures": "xavier_textures.tm3"},
-    "pl/pl01.dat": {"empty": true}
+    "pl/pl01.dat": {"nodes": "xavier_coat.scr", "textures": "xavier_textures.tm3", "keep": [], "append_textures": false}
   }
 }

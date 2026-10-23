@@ -37,13 +37,14 @@ for n in budget:
     me.calc_loop_triangles() if hasattr(me,'calc_loop_triangles') else None
     uvl=me.uv_layers.active.data
     vg={g.index:int(g.name) for g in o.vertex_groups}
+    cl=me.attributes.get('cloth')
     for p in me.polygons:
         mat=o.material_slots[p.material_index].material.name
         corners=[]
         for li in p.loop_indices:
             l=me.loops[li]; v=me.vertices[l.vertex_index]
             w=sorted([(vg[g.group],g.weight) for g in v.groups if g.weight>0.0005], key=lambda x:-x[1])[:3]
-            corners.append(dict(key=(n,l.vertex_index), pos=tuple(v.co), nrm=tuple(v.normal), uv=tuple(uvl[li].uv), w=w))
+            corners.append(dict(key=(n,l.vertex_index), pos=tuple(v.co), nrm=tuple(v.normal), uv=tuple(uvl[li].uv), w=w, cloth=(cl.data[l.vertex_index].value if cl else 0.0)))
         faces.append(dict(obj=n,mat=mat,c=corners))
 print('faces',len(faces))
 
@@ -75,7 +76,18 @@ for k in keys:
         u=sum(c['uv'][0] for c in body[i]['c'])/3; v=sum(c['uv'][1] for c in body[i]['c'])/3
         cols.append(sample((u,v)))
     cols=np.array(cols); feat.append((np.median(cols,0), len(isl[k])))
-print('islands',len(keys))
+loin_isl=set()
+for k in keys:
+    cs=[np.mean([c['pos'] for c in body[i]['c']],0) for i in isl[k]]
+    inz=[ (0.84<=c[2]<=1.2 and abs(c[0])<0.17) for c in cs]
+    frac=sum(inz)/len(inz)
+    if frac>0.3: print('cand',round(frac,2),len(isl[k]),np.min(cs,0).round(2), np.max(cs,0).round(2), feat[keys.index(k)][0].round())
+    if frac>0.9 and np.ptp(np.array(cs)[:,1])<0.15:
+        loin_isl.add(k); print('LOIN island',len(isl[k]),'faces', np.min(cs,0).round(2), np.max(cs,0).round(2), feat[keys.index(k)][0].round())
+for k in loin_isl:
+    for i in isl[k]: body[i]['mat']='loin'
+keys=[k for k in keys if k not in loin_isl]
+feat=[f for k,f in zip(list(isl),feat) if k not in loin_isl]
 # simple k-means in RGB on island medians, weighted
 K=5
 X=np.array([f[0] for f in feat]); Wt=np.array([f[1] for f in feat],float)
@@ -94,7 +106,7 @@ rest=[i for i in range(len(keys)) if lab[i]!=fur]
 cen=[]
 for i in rest:
     uv=np.array([c['uv'] for f in isl[keys[i]] for c in body[f]['c']]); cen.append(uv.mean(0))
-cen=np.array(cen); K2=3
+cen=np.array(cen); K2=2
 c2=cen[np.linspace(0,len(cen)-1,K2).astype(int)]
 for it in range(50):
     l2=np.argmin(((cen[:,None,:]-c2[None])**2).sum(-1),1)

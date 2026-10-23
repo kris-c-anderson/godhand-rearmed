@@ -20,7 +20,7 @@ namespace godhand::characters
     std::vector<Character> list(const std::filesystem::path &exeDir);
 
     // After PS2Runtime::setIoPaths, before the game runs: [Mods] Character (GODHAND_CHARACTER). Each replacement is
-    // written over its own slot in _DATA.AFS (with the archive's size fields) through PS2DiscOverlay; a file larger
-    // than its slot is left out (logged).
+    // written over the game's file in _DATA.AFS through PS2DiscOverlay, zero-padded to its size (sizes and offsets in
+    // the archive never change); a file larger than the game's is left out (logged).
     void install(const std::filesystem::path &exeDir);
 }

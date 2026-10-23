@@ -3,8 +3,8 @@
 // God Hand's files live in _DATA.AFS on the disc: "AFS\0", u32 count, count x (u32 offset, u32 size) relative to the
 // archive start, then (u32 offset, u32 size) of CRI's attribute table (count x 48 bytes: name[32], six u16 date
 // fields, u32 file size). GODHAND.FST maps paths to archive indices (tools/snr2/snr2disc.py has the layout). A
-// replacement no larger than the space before the next file is written over the original's bytes, and its size into
-// both tables; nothing else on the disc moves.
+// replacement no larger than the original is written over the original's bytes, zero-padded to its size; no size or
+// offset on the disc changes.
 #include "godhand/character_mods.h"
 #include "godhand/ini_file.h"
 #include "godhand/log.h"
@@ -29,11 +29,6 @@ namespace godhand::characters
         {
             return o + 4 > b.size() ? 0u : static_cast<uint32_t>(b[o]) | (static_cast<uint32_t>(b[o + 1]) << 8) |
                                                (static_cast<uint32_t>(b[o + 2]) << 16) | (static_cast<uint32_t>(b[o + 3]) << 24);
-        }
-
-        std::vector<uint8_t> le32Bytes(uint32_t v)
-        {
-            return {static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8), static_cast<uint8_t>(v >> 16), static_cast<uint8_t>(v >> 24)};
         }
 
         std::string lower(std::string s)
@@ -156,12 +151,6 @@ namespace godhand::characters
         if (count == 0 || count > 100000 || !readImage(afsBase, toc, 16 + 8u * count) ||
             !readImage(static_cast<uint64_t>(fstEntry.lba) * PS2CdImage::kSectorSize, fst, static_cast<size_t>(fstEntry.size)))
             return;
-        std::vector<uint32_t> starts;
-        for (uint32_t i = 0; i < count; ++i)
-            starts.push_back(le32(toc, 8 + 8u * i));
-        std::sort(starts.begin(), starts.end());
-        const uint32_t attrOff = le32(toc, 8 + 8u * count), attrSize = le32(toc, 12 + 8u * count);
-        const bool attributes = attrOff != 0 && attrSize >= 48u * count && attrOff + uint64_t(attrSize) <= afsEntry.size;
         const auto fstIndex = readFst(fst);
 
         std::vector<PS2DiscOverlay::Patch> patches;
@@ -178,21 +167,20 @@ namespace godhand::characters
             if (index >= count)
                 continue;
             const uint32_t offset = le32(toc, 8 + 8u * index), size = le32(toc, 12 + 8u * index);
-            const auto next = std::upper_bound(starts.begin(), starts.end(), offset);
-            const uint64_t slot = next != starts.end() ? *next - offset : ((size + 2047u) & ~2047u);
             std::ifstream in(entry.path(), std::ios::binary);
             std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-            if (data.empty() || data.size() > slot)
+            if (data.empty() || data.size() > size)
             {
-                GH_ERROR(Boot, "character '" << id << "': " << rel << " is " << data.size() << " bytes, its place on the disc "
-                                             << slot << "; left out");
+                GH_ERROR(Boot, "character '" << id << "': " << rel << " is " << data.size() << " bytes, the game's file "
+                                             << size << "; left out (a replacement must not be larger)");
                 continue;
             }
+            // The sizes in the archive stay as they are: CRI's file system works out where each file starts from the
+            // sizes before it, so a changed size moves every later file (the title room DLL then read as garbage, a
+            // black screen after the logo). The replacement is padded with zeros to the original size instead.
             const uint32_t newSize = static_cast<uint32_t>(data.size());
+            data.resize(size, 0u);
             patches.emplace_back(afsBase + offset, std::move(data));
-            patches.emplace_back(afsBase + 12 + 8u * index, le32Bytes(newSize));
-            if (attributes)
-                patches.emplace_back(afsBase + attrOff + 48u * index + 44u, le32Bytes(newSize));
             GH_INFO(Boot, "character '" << id << "': " << rel << " (AFS " << index << ", " << size << " -> " << newSize << " bytes)");
             ++replaced;
         }

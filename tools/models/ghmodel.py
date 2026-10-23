@@ -181,7 +181,9 @@ def empty_mdb(bone, mat=0):
             col=[(128,128,128,128)]*3, wt=[((0,bone*4,0,0),(100,0,0,0))]*3, mat=mat, extra=bytes(8))
     return dict(vbs=[vb], hdr=bytes(16)+struct.pack('<f',1.0))
 
-def merge_model(game_dat, mod_scr, mod_tm3, keep=KEEP):
+def merge_model(game_dat, mod_scr, mod_tm3, keep=KEEP, append_textures=True):
+    """The game's file with the mod's nodes (by name; 'keep' nodes stay the game's, any other node is drawn as nothing)
+    and textures (by name; new names are appended unless append_textures is False)."""
     ents=dat_read(game_dat)
     out=[]
     mod_kind, mod_nodes = scr_read(mod_scr)
@@ -204,7 +206,7 @@ def merge_model(game_dat, mod_scr, mod_tm3, keep=KEEP):
             names=[nm for nm,_ in texs]
             for name,tb in mod_tex:
                 if name in names: texs[names.index(name)]=(name,tb)
-                else: texs.append((name,tb)); names.append(name)
+                elif append_textures: texs.append((name,tb)); names.append(name)
             d=tm3_write(texs)
         out.append((t,d))
     return dat_build(out)

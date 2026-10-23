@@ -138,6 +138,7 @@ for name in names:
     P=np.array([tuple(mw@Vector(c)) for c in co])
     gname={g.index:g.name for g in ob.vertex_groups}
     newP=np.zeros_like(P); gw=[dict() for _ in range(nv)]; rsum=np.zeros(nv)
+    cloth=np.zeros(nv)
     for i,v in enumerate(me.vertices):
         ws=[(gname[g.group],g.weight) for g in v.groups if gname.get(g.group) in deform and g.weight>0]
         tot=sum(w for _,w in ws)
@@ -154,6 +155,7 @@ for name in names:
             else:
                 gw[i][gb]=gw[i].get(gb,0)+w
             if n in Rarm: rsum[i]+=w
+            if n in ('def_loincloth_front','def_loincloth_back'): cloth[i]+=w
         newP[i]=acc
     new=bpy.data.objects.new('X_'+name, me)
     bpy.context.scene.collection.objects.link(new)
@@ -165,6 +167,14 @@ for name in names:
         for gb,w in d.items():
             if w>0.001: new.vertex_groups[gb].add([vi],w,'REPLACE')
     me['rsum']=0
+    if name=='XavierShoulderPad':
+        # bigger, so the God Hand arm's shoulder stays inside it
+        ax=(G[8]-G[7])/np.linalg.norm(G[8]-G[7]); c=newP.mean(0)
+        for v in me.vertices:
+            d=np.array(v.co)-c; a=np.dot(d,ax)
+            v.co=Vector(c+ax*a*1.1+(d-ax*a)*1.3)
+    at=me.attributes.new('cloth','FLOAT','POINT')
+    for i in range(nv): at.data[i].value=float(cloth[i])
     # delete right arm & mouth interior
     bm=bmesh.new(); bm.from_mesh(me); bm.verts.ensure_lookup_table()
     kill=[]

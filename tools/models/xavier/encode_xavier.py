@@ -18,14 +18,16 @@ cnt=Counter(f['mat'] for f in faces)
 print(cnt)
 fur='body0'
 others=sorted([m for m in cnt if m.startswith('body') and m!=fur], key=lambda m:-cnt[m])
+print('others',others)
 # material -> (tm3 index, name, source image, texels per source pixel, max size, alpha)
 plan={'head':(0,'pl0000','XavierFace.png',0.25,256,False), fur:(1,'pl0001','XavierDiffuse.png',0.125,256,False),
       'hair':(7,'pl0007','Xavier_HAIR.png',0.2,128,True),'eyeR':(8,'pl0008','Eye_BLUE.png',0.0625,64,False),
       'eyeL':(9,'pl0009','Eye_BROWN.png',0.0625,64,False),'snakeeye':(13,'pl0013','Xavier_SNAKEEYE.png',0.1,64,False)}
-assert len(others)<=3
-for m,(idx,nm) in zip(others,((2,'pl0002'),(3,'pl0003'),(6,'pl0006'))):
+assert len(others)<=2
+plan['loin']=(3,'pl0003','XavierDiffuse.png',0.3,128,False)
+for m,(idx,nm) in zip(others,((2,'pl0002'),(6,'pl0006'))):
     plan[m]=(idx,nm,'XavierDiffuse.png',0.25,256,False)
-node_of={'head':'HD_00','eyeR':'HD_00','eyeL':'HD_00','hair':'z_00'}
+node_of={'head':'HD_00','eyeR':'HD_00','eyeL':'HD_00','hair':'z_00','loin':'COAT'}
 
 def p2(x,lo,hi):
     v=lo
@@ -91,6 +93,30 @@ for mat,(idx,nm,src,dens,mx,alpha) in plan.items():
 
 def game(v): return (v[0],v[2],-v[1])
 
+# Gene's coat tails (pl/pl01.dat): 8 chains of 5 bones around the waist, simulated by the game. The loincloth panels
+# hang from the front and back chains.
+import os as _os
+_b=open(_os.path.join(_os.path.dirname(os.environ['GENE_PL00']),'pl01.dat'),'rb').read()
+_md=[d for t,d,o in dat_read(_b) if t=='MD'][0]; _k,_nodes=scr_read(_md); _m=mdb_read(_md,_nodes[0]['mdb_off'])
+CW=[]
+for bn in _m['bones']:
+    p_=bn['parent']; base=CW[p_] if p_>=0 else (0,0,0); CW.append(tuple(base[j]+bn['t'][j] for j in range(3)))
+COAT_TEX=[nm for nm,_,_ in tm3_read([d for t,d,o in dat_read(_b) if t=='TM3'][0])].index('pl0003')
+def coat_weights(p):
+    x,y,z=p
+    l,r=(1,21) if z>0 else (16,36)
+    t=min(1,max(0,(x-CW[l][0])/(CW[r][0]-CW[l][0])))
+    top=CW[l][1]
+    if y>=top: k=None
+    else:
+        k=0
+        while k<4 and y<CW[l+k+1][1]: k+=1
+    wroot=1.0 if y>=top else max(0.0,(y-(top-0.06))/0.06)
+    ws=[(0,wroot)]
+    if k is not None: ws+= [(l+k,(1-wroot)*(1-t)),(r+k,(1-wroot)*t)]
+    ws=[w for w in ws if w[1]>0.001]
+    return sorted(ws,key=lambda w:-w[1])[:3]
+
 nodes={}
 for mat in plan:
     if mat not in uvmap: continue
@@ -106,7 +132,7 @@ for mat in plan:
             k=(tuple(c['key']),u,v)
             if k not in ids:
                 ids[k]=len(verts)
-                w=c['w']; tot=sum(x[1] for x in w) or 1
+                w=coat_weights(game(c['pos'])) if node=='COAT' else c['w']; tot=sum(x[1] for x in w) or 1
                 pct=[int(math.floor(x[1]*100/tot)) for x in w]
                 if pct: pct[0]+=100-sum(pct)
                 j=[0,0,0,0]; ww=[0,0,0,0]
@@ -118,14 +144,17 @@ for mat in plan:
         if len(set(t))==3: tris.append(tuple(t))
     for buf in build_buffers(tris, 900):
         vb=dict(pos=[verts[i]['pos'] for i,_ in buf],flags=[fl_ for _,fl_ in buf],nrm=[verts[i]['nrm'] for i,_ in buf],
-                uv=[verts[i]['uv'] for i,_ in buf],col=[(128,128,128,128)]*len(buf),wt=[verts[i]['wt'] for i,_ in buf],mat=idx,extra=bytes(8))
+                uv=[verts[i]['uv'] for i,_ in buf],col=[(128,128,128,128)]*len(buf),wt=[verts[i]['wt'] for i,_ in buf],mat=COAT_TEX if node=='COAT' else idx,extra=bytes(8))
         nodes.setdefault(node,[]).append(vb)
 for n,vbs in nodes.items(): print('NODE',n,len(vbs),'vbs',sum(len(v['pos']) for v in vbs),'verts')
 
 # write the Xavier node file (scr) with an empty bone table and the texture container
 HDR=bytes(16)+struct.pack('<f',1.0)
 TAIL=bytes.fromhex('000000000000000001000000000000000000164400007f00')+bytes(36)
+coat=nodes.pop('COAT',None)
 order=sorted(nodes, reverse=True)
+if coat:
+    open(OUT+'/xavier_coat.scr','wb').write(scr_write(3,[dict(name='z_b',mdb=dict(vbs=coat,hdr=HDR),srt=(1,1,1,0,0,0,0,0,0),tail=TAIL)], bytes(16*41), 0))
 scr=scr_write(3,[dict(name=n,mdb=dict(vbs=nodes[n],hdr=HDR),srt=(1,1,1,0,0,0,0,0,0),tail=TAIL) for n in order], bytes(16*32), 0)
 open(OUT+'/xavier_nodes.scr','wb').write(scr)
 tm=tm3_write([(n,t) for i,(n,t) in sorted(textures.items())])
