@@ -846,6 +846,9 @@ def characters(args=()):
     if "--texture-pack" in args and args.index("--texture-pack") + 1 < len(args):
         i = args.index("--texture-pack"); pack = args[i + 1]; del args[i:i + 2]
     sys.path.insert(0, str(ROOT / "tools" / "models"))
+    pydeps = ROOT / "build" / "pydeps"  # numpy, Pillow, xxhash (pip install --target build/pydeps) for the painted textures
+    if pydeps.is_dir():
+        sys.path.append(str(pydeps))
     import build_characters
     build_characters.texture_pack = pack or None  # the HD pack the painted arm textures start from (optional)
     BIN.mkdir(parents=True, exist_ok=True)

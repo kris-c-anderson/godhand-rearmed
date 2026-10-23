@@ -43,3 +43,11 @@ flag = "unlock_hard"
 address = "0x0079B924"
 value = "0x00041825"
 flag = "unlock_hard"
+
+# 0x799530: the room's init picks the three difficulty entries' message/sprite ids by the same flag (38, 39, 40 with
+# Hard unlocked; 11, 12, 13 with it locked, the locked plate). Without this one the Hard sprite from 0x79B924 was
+# drawn over the locked layout and the cursor could not reach it. and v0,v0,v1 -> or v0,zero,v1.
+[[patches.conditional]]
+address = "0x00799530"
+value = "0x00031025"
+flag = "unlock_hard"

@@ -11,6 +11,7 @@
 #include "common/BitUtils.h"
 #include "common/StringUtil.h"
 #include <bit>
+#include <cstdio>
 #include <cstdlib>
 
 using PS_ATST  = GSShader::PS_ATST;
@@ -2802,7 +2803,12 @@ void GSRendererHW::Draw()
 		if (skip_dof && PRIM->ABE && PRIM->TME && m_vt.m_primclass == GS_SPRITE_CLASS && m_cached_ctx.TEX0.PSM == PSMCT32 &&
 			m_cached_ctx.TEX0.TW == 8 && m_cached_ctx.TEX0.TH == 8 && m_cached_ctx.TEX0.TBP0 == 0x2800 &&
 			m_context->ALPHA.A == 0 && m_context->ALPHA.B == 1 && m_context->ALPHA.C == 0 && m_context->ALPHA.D == 1)
+		{
+			static u32 skipped = 0;
+			if (skipped++ % 600 == 0)
+				std::fprintf(stderr, "[pcsx2-gs] PS2X_PCSX2_SKIP_DOF: depth-of-field composite skipped (%u so far)\n", skipped);
 			return;
+		}
 	}
 
 	// Sometimes everything will get reset and it will draw a single black point in the top left corner,

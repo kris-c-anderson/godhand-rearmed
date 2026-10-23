@@ -748,6 +748,32 @@ std::optional<GSTextureReplacements::ReplacementTexture> GSTextureReplacements::
 		}
 	}
 
+	// pcsx2gs (God Hand port): replacement packs made from PCSX2 dumps and resampled carry alpha 126..129 where the
+	// game's texture is exactly 0x80 (opaque): the GS alpha test God Hand's characters use (ATST GREATER, AREF 0x7F,
+	// AFAIL FB_ONLY) then fails on those texels and they are drawn without depth, so later draws show through them.
+	// Snap 120..136 back to 128 (PS2X_PCSX2_SNAP_ALPHA=0 turns it off).
+	{
+		static const bool snap = [] { const char* v = std::getenv("PS2X_PCSX2_SNAP_ALPHA"); return !(v && *v == '0'); }();
+		if (snap && rtex.format == GSTexture::Format::Color)
+		{
+			const auto fix = [](std::vector<u8>& data, u32 width, u32 height, u32 pitch) {
+				for (u32 y = 0; y < height; y++)
+				{
+					u8* row = data.data() + static_cast<size_t>(y) * pitch;
+					for (u32 x = 0; x < width; x++)
+					{
+						u8& a = row[x * 4 + 3];
+						if (a >= 120 && a <= 136)
+							a = 128;
+					}
+				}
+			};
+			fix(rtex.data, rtex.width, rtex.height, rtex.pitch);
+			for (auto& mip : rtex.mips)
+				fix(mip.data, mip.width, mip.height, mip.pitch);
+		}
+	}
+
 	SetReplacementTextureAlphaMinMax(rtex);
 
 	// pcsx2gs (God Hand port): note when a host folder's texture is used (pcsx2gs::ExtraTextureFolders).
