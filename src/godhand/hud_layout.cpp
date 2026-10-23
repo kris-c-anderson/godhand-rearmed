@@ -53,7 +53,6 @@ namespace godhand::hud
         {
             Anchored,
             Centered,
-            Off,
         };
 
         constexpr uint32_t kScreenWidth = 0x3C1180u;
@@ -63,6 +62,7 @@ namespace godhand::hud
         Layout g_layout = Layout::Anchored;
         bool g_wide = false;
         float g_k = 1.0f;
+        float g_edgeShare = 0.0f; // HUD edges: the 16:9 area's edges, as a share of the half width from the centre
         uint64_t g_frame = 0;
 
         struct Extent
@@ -124,15 +124,20 @@ namespace godhand::hud
         // Small groups (button prompts, icons, often placed on things in the 3D view) keep their own centre. Others
         // are narrowed toward the screen edge or centre of the third they are in: every group in one third gets the
         // same mapping, so layouts drawn over each other (a menu's background and its highlight) stay lined up.
+        // The HUD's edges: at 16:9 the screen's edges; wider screens keep the HUD at the edges of a 16:9 area in the
+        // middle; narrower than 16:9 (and the 4:3 layout) puts the HUD where the PS2 had it.
         float anchorFromExtent(float x0, float x1, float width)
         {
             const float span = x1 - x0, centre = 0.5f * (x0 + x1);
             if (span < 0.12f * width)
                 return centre;
+            if (g_layout != Layout::Anchored || g_edgeShare <= 0.0f)
+                return 0.5f * width;
+            const float left = 0.5f * width * (1.0f - g_edgeShare);
             if (centre < width / 3.0f)
-                return 0.0f;
+                return left;
             if (centre > 2.0f * width / 3.0f)
-                return width;
+                return width - left;
             return 0.5f * width;
         }
 
@@ -188,8 +193,6 @@ namespace godhand::hud
         // n vertices, x at address + i*16 (y at +4), in GS units: screen*16 + offset (offset 0 for the font drawer).
         void narrowVertices(uint8_t *rdram, uint32_t address, int n, uint32_t caller, const char *tag, bool withOffset = true)
         {
-            if (g_layout == Layout::Off && !g_dumping)
-                return;
             const float width = screenWidth(rdram);
             const int32_t offset = withOffset ? gsOffset(rdram) : 0;
             const int32_t yOffset = withOffset ? static_cast<int32_t>(read32(rdram, kScreenYOffset)) * 16 : 0;
@@ -204,20 +207,13 @@ namespace godhand::hud
                 y1 = std::max(y1, y);
             }
             const float none = std::nanf("");
-            if (g_layout == Layout::Off)
-            {
-                dumpPrim(tag, caller, x0, x1, y0, y1, "off", none);
-                return;
-            }
             if (n >= 2 && x1 - x0 >= 0.9f * width)
             {
                 dumpPrim(tag, caller, x0, x1, y0, y1, "fullwidth", none);
                 return; // full-screen quad: backgrounds, fades
             }
             float anchor;
-            if (g_layout == Layout::Centered)
-                anchor = 0.5f * width;
-            else if (g_ctx.active)
+            if (g_ctx.active)
             {
                 extend(g_ctx.key, x0, x1);
                 anchor = g_ctx.anchor;
@@ -259,16 +255,12 @@ namespace godhand::hud
         // func_0015C410 before "sw $a3,0x40($sp)": one strip vertex's GS x in $a3.
         void stripVertex(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            if (g_layout == Layout::Off)
-                return;
             const float width = screenWidth(rdram);
             const int32_t offset = gsOffset(rdram);
             const float xs = static_cast<float>(GPR_S32(ctx, 7) - offset) / 16.0f;
             const uint32_t caller = read32(rdram, GPR_U32(ctx, 29) + 0x70u);
             float anchor;
-            if (g_layout == Layout::Centered)
-                anchor = 0.5f * width;
-            else if (g_ctx.active)
+            if (g_ctx.active)
             {
                 extend(g_ctx.key, xs, xs);
                 anchor = g_ctx.anchor;
@@ -380,11 +372,9 @@ namespace godhand::hud
             switch (layout)
             {
             case Layout::Anchored:
-                return "anchored";
-            case Layout::Centered:
-                return "centered";
+                return "16:9 (HUD at the edges)";
             default:
-                return "off";
+                return "4:3 (HUD where the PS2 had it)";
             }
         }
 
@@ -395,11 +385,10 @@ namespace godhand::hud
             std::string value(text);
             for (char &c : value)
                 c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            if (value == "centered" || value == "centred" || value == "center" || value == "centre")
+            if (value == "4:3" || value == "classic" || value == "centered" || value == "centred" || value == "center" ||
+                value == "centre")
                 return Layout::Centered;
-            if (value == "off" || value == "stretched" || value == "pnach" || value == "0")
-                return Layout::Off;
-            return Layout::Anchored;
+            return Layout::Anchored; // "16:9", "wide", and the old "anchored" / "off"
         }
 
         bool keyPressed(int key, bool &wasDown)
@@ -442,20 +431,9 @@ namespace godhand::hud
         }
     }
 
-    bool narrowFont()
-    {
-        switch (g_layout)
-        {
-        case Layout::Off:
-            return true;
-        case Layout::Centered:
-            return false;
-        default:
-            return false; // all text goes through the 2D narrowing
-        }
-    }
-
-    bool narrowGauge() { return g_layout == Layout::Off; }
+    // All text and gauges go through the 2D narrowing: the pnach's own font and gauge narrowing is not used.
+    bool narrowFont() { return false; }
+    bool narrowGauge() { return false; }
 
     void onFrame(uint8_t *)
     {
@@ -490,7 +468,7 @@ namespace godhand::hud
         if (false)
 #endif
         {
-            g_layout = g_layout == Layout::Anchored ? Layout::Centered : g_layout == Layout::Centered ? Layout::Off : Layout::Anchored;
+            g_layout = g_layout == Layout::Anchored ? Layout::Centered : Layout::Anchored;
             g_loose.clear();
             GH_INFO(Game, "HUD layout (F7): " << layoutName(g_layout));
         }
@@ -502,6 +480,9 @@ namespace godhand::hud
     {
         g_wide = wide;
         g_k = k;
+        // k = (4/3) / aspect; the 16:9 area takes (16/9) / aspect of the width. Below 16:9 the HUD has no edges.
+        const float aspect = (4.0f / 3.0f) / k;
+        g_edgeShare = aspect >= 16.0f / 9.0f - 0.01f ? std::min(1.0f, (16.0f / 9.0f) / aspect) : 0.0f;
         g_layout = parseLayout(std::getenv("GODHAND_HUD"));
         ps2xRegisterHostHook("gh_hud_line", &gpVertices<2, 0x70u>);
         ps2xRegisterHostHook("gh_hud_poly3", &gpVertices<3, 0x80u>);
@@ -521,6 +502,6 @@ namespace godhand::hud
         ps2xRegisterHostHook("gh_hud_roulette_begin", &regionBegin<kRoulette, Region::Forced>);
         ps2xRegisterHostHook("gh_hud_region_end", &regionEnd);
         if (wide)
-            GH_INFO(Game, "HUD layout: " << layoutName(g_layout) << " (F7 cycles anchored / centered / off; F6 writes one frame's 2D to the log)");
+            GH_INFO(Game, "HUD layout: " << layoutName(g_layout) << " (F7 switches 16:9 / 4:3 HUD; F6 writes one frame's 2D to the log)");
     }
 }
