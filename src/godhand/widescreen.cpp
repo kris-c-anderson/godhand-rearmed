@@ -106,14 +106,17 @@ namespace godhand
         ps2xSetPatchFlag("widescreen", wide);
         hud::install(wide, 1.0f / wider);
         ps2_host_display::setAspect(aspect);
-        if (wide && !std::getenv("PS2X_PCSX2_ASPECT"))
+        // PCSX2's custom aspect: ours unless the environment set it (then it is left alone). Called again after the
+        // launcher, the value is replaced (4:3 included, so a launcher change back to 4:3 takes effect).
+        static bool s_ownAspect = std::getenv("PS2X_PCSX2_ASPECT") == nullptr;
+        if (s_ownAspect)
         {
             char text[32];
-            std::snprintf(text, sizeof(text), "%.6f", aspect);
+            std::snprintf(text, sizeof(text), "%.6f", wide ? aspect : 0.0f);
 #if defined(_WIN32)
-            _putenv_s("PS2X_PCSX2_ASPECT", text);
+            _putenv_s("PS2X_PCSX2_ASPECT", wide ? text : "");
 #else
-            setenv("PS2X_PCSX2_ASPECT", text, 0);
+            setenv("PS2X_PCSX2_ASPECT", wide ? text : "", 1);
 #endif
         }
         GH_INFO(Game, "aspect ratio " << aspect << (wide ? " (widescreen: camera, font and gauge widths adjusted)" : " (the PS2's 4:3)"));

@@ -40,6 +40,7 @@ set(GODHAND_HOST_SOURCES
     godhand/frame_patches.cpp
     godhand/widescreen.cpp
     godhand/hud_layout.cpp
+    godhand/ini_file.cpp
     godhand/counter_finder.cpp
     godhand/pc_sampler.cpp
     godhand/function_hooks.cpp
@@ -256,6 +257,9 @@ if(GODHAND_DEBUG_UI AND TARGET rlImGui)
     target_include_directories(godhand PRIVATE "${CMAKE_SOURCE_DIR}/runtime/ps2xRuntime/src/lib")
     target_link_libraries(godhand PRIVATE rlImGui imgui)
     target_compile_definitions(godhand PRIVATE PS2X_ENABLE_DEBUG_UI=1)
+    # The launcher (src/godhand/launcher.cpp) draws with the same Dear ImGui.
+    target_sources(godhand PRIVATE godhand/launcher.cpp godhand/launcher_platform.cpp)
+    target_compile_definitions(godhand PRIVATE GODHAND_HAS_LAUNCHER=1)
 endif()
 
 # FFmpeg is off by default (GODHAND_FFMPEG); with it on, the runtime stages its DLLs next to the exe.

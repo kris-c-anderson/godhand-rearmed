@@ -28,6 +28,9 @@
 #include "godhand/movie_watchdog.h"
 #include "godhand/frame_patches.h"
 #include "godhand/widescreen.h"
+#if GODHAND_HAS_LAUNCHER
+#include "godhand/launcher.h"
+#endif
 #include "godhand/pc_sampler.h"
 #include "godhand/thread_policy.h"
 
@@ -363,6 +366,7 @@ namespace
         {"video", "aspectratio", "GODHAND_ASPECT"},
         {"video", "hudlayout", "GODHAND_HUD"},
         {"video", "startfullscreen", "GODHAND_START_FULLSCREEN"},
+        {"launcher", "show", "GODHAND_LAUNCHER"},
     };
 
     // Variables holding a path: a relative value from godhand.ini is made absolute against the exe folder (a value
@@ -423,6 +427,8 @@ namespace
     // Reads godhand.ini (written from the built-in default when missing). Returns the lines to log once the log is set
     // up ("ini: X=..." / "env: X=... (wins over godhand.ini)"). PS2X_PAD<n>* lines are not exported: they go to
     // `padLayout`, which only seeds the controls file (controls.ini) when that does not exist yet.
+    std::set<std::string> g_iniVariables; // set from godhand.ini (not the real environment)
+
     std::vector<std::string> loadSettings(const fs::path &iniPath, const fs::path &exeDir,
                                           std::vector<std::pair<std::string, std::string>> &padLayout)
     {
@@ -468,20 +474,28 @@ namespace
                 notes.push_back("unknown setting [" + section + "] " + key + " (ignored)");
                 continue;
             }
+            // Read again after the launcher changed the file: variables this file set before follow it (an emptied
+            // value clears them); the real environment still wins.
+            const bool ours = g_iniVariables.count(variable) != 0u;
             if (value.empty())
+            {
+                if (ours)
+                    setEnv(variable, "");
                 continue;
+            }
             if (padLayoutVariable(variable))
             {
                 padLayout.emplace_back(variable, value);
                 continue;
             }
-            if (const char *current = std::getenv(variable.c_str()))
+            if (const char *current = std::getenv(variable.c_str()); current && !ours)
             {
                 notes.push_back("env: " + variable + "=" + current + " (wins over godhand.ini " + value + ")");
                 continue;
             }
             const std::string resolved = resolvePath(exeDir, variable, value);
             setEnv(variable, resolved);
+            g_iniVariables.insert(variable);
             notes.push_back("ini: " + variable + "=" + resolved);
         }
         return notes;
@@ -656,32 +670,89 @@ int main(int argc, char *argv[])
     godhand::threadpolicy::startFromEnvironment(); // PS2X_THREAD_POLICY (godhand.ini: off)
     startTimeLimit();                                // counts from here: covers disc check, init and the run
 
-    if (iso.empty())
-    {
-        if (const char *env = std::getenv("GODHAND_ISO"); env && *env)
-            iso = env;
-    }
-    if (iso.empty())
-    {
-        iso = godhand::findDiscImage({exeDir / "game", exeDir.parent_path() / "game", exeDir.parent_path().parent_path() / "game",
-                                      exeDir.parent_path().parent_path().parent_path() / "game", fs::current_path() / "game",
-                                      fs::current_path()});
-    }
-    if (iso.empty())
-    {
-        GH_ERROR(Boot, "no disc image found. Pass --iso <path> (or [Game] Iso=) to your own " << godhand::kGameTitle << " ("
-                                                                                               << godhand::kSerial << ") disc image.");
-        printUsage();
-        return kExitNoDisc;
-    }
-
+    // The disc image: --iso, then GODHAND_ISO / [Game] Iso, then an .iso in a game folder near the exe. Without one (or
+    // with one that fails the check) a windowed run shows the launcher's Install screen; the launcher also shows at
+    // start unless hidden ([Launcher] Show=0, Shift held brings it back).
     const fs::path cacheDir = exeDir / "game_data";
-    GH_INFO(Boot, "disc image: " << iso.string());
-    const godhand::DiscCheckResult disc = godhand::verifyDiscAndPrepare(iso, cacheDir);
-    if (!disc.ok)
+    const bool isoFromCommandLine = !iso.empty();
+    auto resolveIso = [&]() -> fs::path
     {
+        if (isoFromCommandLine)
+            return iso;
+        if (const char *env = std::getenv("GODHAND_ISO"); env && *env)
+            return fs::path(env);
+        return godhand::findDiscImage({exeDir / "game", exeDir.parent_path() / "game", exeDir.parent_path().parent_path() / "game",
+                                       exeDir.parent_path().parent_path().parent_path() / "game", fs::current_path() / "game",
+                                       fs::current_path()});
+    };
+    iso = resolveIso();
+#if GODHAND_HAS_LAUNCHER
+    const bool launcherAllowed = !headless && !isoFromCommandLine;
+#else
+    const bool launcherAllowed = false;
+#endif
+    // Shows the launcher; false = the player quit. Afterwards godhand.ini is read again (the settings it changed).
+    auto showLauncher = [&](const std::string &message) -> bool
+    {
+#if GODHAND_HAS_LAUNCHER
+        godhand::installWidescreen(); // the window's shape, as the game will have it
+        ps2_host_display::setStartMaximized(envFlag("GODHAND_START_MAXIMIZED", false));
+        ps2_host_display::setStartFullscreen(envFlag("GODHAND_START_FULLSCREEN", false));
+        const godhand::launcher::Result result =
+            godhand::launcher::run(godhand::launcher::Context{exeDir, exeDir / "godhand.ini", cacheDir, iso, message});
+        if (result == godhand::launcher::Result::Quit)
+            return false;
+        std::vector<std::pair<std::string, std::string>> unusedPadLayout;
+        for (const std::string &note : loadSettings(exeDir / "godhand.ini", exeDir, unusedPadLayout))
+            GH_INFO(Boot, "settings (after the launcher): " << note);
+        iso = resolveIso();
+        return true;
+#else
+        (void)message;
+        return false;
+#endif
+    };
+    {
+        std::error_code isoError;
+#if GODHAND_HAS_LAUNCHER
+        const bool showAtStart = launcherAllowed && godhand::launcher::wanted(!iso.empty() && fs::is_regular_file(iso, isoError));
+#else
+        const bool showAtStart = false;
+#endif
+        if (showAtStart)
+        {
+            if (!showLauncher(""))
+            {
+                GH_INFO(Boot, "quit from the launcher");
+                return kExitOk;
+            }
+        }
+    }
+    godhand::DiscCheckResult disc;
+    for (;;)
+    {
+        if (iso.empty())
+        {
+            if (!launcherAllowed)
+            {
+                GH_ERROR(Boot, "no disc image found. Pass --iso <path> (or [Game] Iso=) to your own " << godhand::kGameTitle
+                                                                                                     << " (" << godhand::kSerial << ") disc image.");
+                printUsage();
+                return kExitNoDisc;
+            }
+            if (!showLauncher("Choose your God Hand (USA, SLUS-21503) disc image."))
+                return kExitOk;
+            continue;
+        }
+        GH_INFO(Boot, "disc image: " << iso.string());
+        disc = godhand::verifyDiscAndPrepare(iso, cacheDir);
+        if (disc.ok)
+            break;
         GH_ERROR(Boot, disc.error);
-        return kExitBadDisc;
+        if (!launcherAllowed)
+            return kExitBadDisc;
+        if (!showLauncher("The disc image " + iso.string() + " cannot be used: " + disc.error))
+            return kExitOk;
     }
 
     PS2Runtime::IoPaths paths;
@@ -761,7 +832,9 @@ int main(int argc, char *argv[])
         // Never destroyed: the process ends with std::_Exit while it is alive, so the time-limit thread can always use it.
         PS2Runtime &runtime = *new PS2Runtime();
         g_capRuntime.store(&runtime);
+#if defined(_WIN32)
         g_crashRuntime.store(&runtime);
+#endif
 #if defined(PS2X_ENABLE_DEBUG_UI)
         // ImGui runtime debugger from PS2Recomp: F12 toggles it (F1 = Controls screen); GODHAND_DEBUG_UI=1 opens it at start-up.
         static PS2DebugPanel debugPanel;

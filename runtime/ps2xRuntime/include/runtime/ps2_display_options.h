@@ -11,6 +11,12 @@ namespace ps2_host_display
     void setStartMaximized(bool enabled);
     // Borderless fullscreen at start (like F11).
     void setStartFullscreen(bool enabled);
+    // Makes the game window (raylib) if it does not exist yet, sized by PS2X_WINDOW_SIZE, the aspect and the start
+    // flags above; called again (by PS2Runtime::initialize after a launcher made the window), it keeps the window and
+    // applies what changed. Main thread.
+    void openHostWindow(const char *title);
+    // Real vsync for the window (PS2X_VSYNC, default on); off = the software 60 FPS limiter.
+    bool vsyncEnabled();
     // Game frames for the FPS overlay (F3): the port calls this once per iteration of the game's main loop.
     void noteGameFrame();
     // A line shown on screen (top left) until replaced or cleared with an empty string, e.g. "capturing profile".

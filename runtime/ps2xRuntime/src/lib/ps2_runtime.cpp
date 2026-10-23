@@ -1060,6 +1060,70 @@ bool PS2Runtime::syncCoreSubsystems()
     return true;
 }
 
+// The game window (raylib): made once, by the port's launcher or by PS2Runtime::initialize; a second call keeps the
+// window and applies the size and fullscreen settings again if they changed.
+void ps2_host_display::openHostWindow(const char *title)
+{
+#if defined(PLATFORM_VITA)
+    if (!IsWindowReady())
+        InitWindow(HOST_WINDOW_WIDTH, HOST_WINDOW_HEIGHT, title);
+#else
+    // Real vsync (PS2X_VSYNC=0 goes back to the software 60 FPS limiter): the limiter was not aligned with the
+    // monitor's refresh, so presents landed at a drifting phase and frames were shown for 1 or 3 refreshes.
+    if (!IsWindowReady())
+    {
+        SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_ALWAYS_RUN | (ps2_host_display::vsyncEnabled() ? FLAG_VSYNC_HINT : 0u));
+        InitWindow(HOST_WINDOW_WIDTH, HOST_WINDOW_HEIGHT, title);
+    }
+    else
+        SetWindowTitle(title);
+    // Window size (PS2X_WINDOW_SIZE): "auto" (default) = 3/4 of the monitor's height in the display's shape,
+    // centered; "<w>x<h>" = that client size, centered; "native" = HOST_WINDOW_WIDTH x HOST_WINDOW_HEIGHT as before.
+    static std::string s_appliedSize;
+    const char *sizeValue = std::getenv("PS2X_WINDOW_SIZE");
+    const std::string sizeKey = std::string(sizeValue ? sizeValue : "") + "@" + std::to_string(ps2_host_display::aspect());
+    if (!ps2_host_display::startMaximized && !ps2_host_display::startFullscreen && !IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE) &&
+        sizeKey != s_appliedSize)
+    {
+        s_appliedSize = sizeKey;
+        const char *value = sizeValue;
+        const std::string mode = value && *value ? value : "auto";
+        if (mode != "native")
+        {
+            const int monitor = GetCurrentMonitor();
+            const int monitorWidth = GetMonitorWidth(monitor), monitorHeight = GetMonitorHeight(monitor);
+            int width = 0, height = 0;
+            if (std::sscanf(mode.c_str(), "%dx%d", &width, &height) != 2 || width < 320 || height < 240)
+            {
+                const float aspect = std::max(0.5f, ps2_host_display::aspect());
+                height = monitorHeight * 3 / 4;
+                width = static_cast<int>(static_cast<float>(height) * aspect + 0.5f);
+                if (width > monitorWidth * 9 / 10)
+                {
+                    width = monitorWidth * 9 / 10;
+                    height = static_cast<int>(static_cast<float>(width) / aspect + 0.5f);
+                }
+            }
+            if (monitorWidth > 0 && monitorHeight > 0 && width > 0 && height > 0)
+            {
+                const Vector2 origin = GetMonitorPosition(monitor);
+                SetWindowSize(width, height);
+                SetWindowPosition(static_cast<int>(origin.x) + std::max(0, (monitorWidth - width) / 2),
+                                  static_cast<int>(origin.y) + std::max(0, (monitorHeight - height) / 2));
+                std::cerr << "[window] " << width << "x" << height << " on a " << monitorWidth << "x" << monitorHeight
+                          << " monitor (PS2X_WINDOW_SIZE=" << mode << ")" << std::endl;
+            }
+        }
+    }
+    // A window kept from the launcher: its shape is set again only if the settings changed it.
+    if (ps2_host_display::startFullscreen != IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE))
+        ToggleBorderlessWindowed();
+    if (ps2_host_display::startMaximized && !IsWindowState(FLAG_WINDOW_MAXIMIZED))
+        MaximizeWindow();
+    SetExitKey(KEY_NULL);
+#endif
+}
+
 bool PS2Runtime::initialize(const char *title)
 {
     try
@@ -1073,47 +1137,7 @@ bool PS2Runtime::initialize(const char *title)
 #if defined(PLATFORM_VITA)
         InitWindow(HOST_WINDOW_WIDTH, HOST_WINDOW_HEIGHT, title); // raylib vita does not support audio
 #else
-        // Real vsync (PS2X_VSYNC=0 goes back to the software 60 FPS limiter): the limiter was not aligned with the
-        // monitor's refresh, so presents landed at a drifting phase and frames were shown for 1 or 3 refreshes.
-        SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_ALWAYS_RUN | (ps2_host_display::vsyncEnabled() ? FLAG_VSYNC_HINT : 0u));
-        InitWindow(HOST_WINDOW_WIDTH, HOST_WINDOW_HEIGHT, title);
-        // Window size (PS2X_WINDOW_SIZE): "auto" (default) = 3/4 of the monitor's height in the display's shape,
-        // centered; "<w>x<h>" = that client size, centered; "native" = HOST_WINDOW_WIDTH x HOST_WINDOW_HEIGHT as before.
-        if (!ps2_host_display::startMaximized && !ps2_host_display::startFullscreen)
-        {
-            const char *value = std::getenv("PS2X_WINDOW_SIZE");
-            const std::string mode = value && *value ? value : "auto";
-            if (mode != "native")
-            {
-                const int monitor = GetCurrentMonitor();
-                const int monitorWidth = GetMonitorWidth(monitor), monitorHeight = GetMonitorHeight(monitor);
-                int width = 0, height = 0;
-                if (std::sscanf(mode.c_str(), "%dx%d", &width, &height) != 2 || width < 320 || height < 240)
-                {
-                    const float aspect = std::max(0.5f, ps2_host_display::aspect());
-                    height = monitorHeight * 3 / 4;
-                    width = static_cast<int>(static_cast<float>(height) * aspect + 0.5f);
-                    if (width > monitorWidth * 9 / 10)
-                    {
-                        width = monitorWidth * 9 / 10;
-                        height = static_cast<int>(static_cast<float>(width) / aspect + 0.5f);
-                    }
-                }
-                if (monitorWidth > 0 && monitorHeight > 0 && width > 0 && height > 0)
-                {
-                    const Vector2 origin = GetMonitorPosition(monitor);
-                    SetWindowSize(width, height);
-                    SetWindowPosition(static_cast<int>(origin.x) + std::max(0, (monitorWidth - width) / 2),
-                                      static_cast<int>(origin.y) + std::max(0, (monitorHeight - height) / 2));
-                    std::cerr << "[window] " << width << "x" << height << " on a " << monitorWidth << "x" << monitorHeight
-                              << " monitor (PS2X_WINDOW_SIZE=" << mode << ")" << std::endl;
-                }
-            }
-        }
-        if (ps2_host_display::startMaximized)
-            MaximizeWindow();
-        if (ps2_host_display::startFullscreen)
-            ToggleBorderlessWindowed();
+        ps2_host_display::openHostWindow(title);
         SetExitKey(KEY_NULL);
         InitAudioDevice();
         m_audioBackend.setAudioReady(IsAudioDeviceReady());
