@@ -11,6 +11,7 @@
 #include "common/BitUtils.h"
 #include "common/StringUtil.h"
 #include <bit>
+#include <cstdlib>
 
 using PS_ATST  = GSShader::PS_ATST;
 using PS_AFAIL = GSShader::PS_AFAIL;
@@ -2791,6 +2792,17 @@ void GSRendererHW::Draw()
 	{
 		GL_INS("HW: Warning skipping a draw call (%lld)", s_n);
 		return;
+	}
+
+	// God Hand (pcsx2gs): PS2X_PCSX2_SKIP_DOF=1 drops the game's depth-of-field composite, the full-screen sprite that
+	// blends its blurred 256x256 copy of the frame (CT32 at TBP 0x2800, alpha = the depth mask the game built there)
+	// over the frame with ALPHA 0x44. An A/B switch for the 2026-10 transparent-enemies / grainy-haze investigation.
+	{
+		static const bool skip_dof = [] { const char* v = std::getenv("PS2X_PCSX2_SKIP_DOF"); return v && *v == '1'; }();
+		if (skip_dof && PRIM->ABE && PRIM->TME && m_vt.m_primclass == GS_SPRITE_CLASS && m_cached_ctx.TEX0.PSM == PSMCT32 &&
+			m_cached_ctx.TEX0.TW == 8 && m_cached_ctx.TEX0.TH == 8 && m_cached_ctx.TEX0.TBP0 == 0x2800 &&
+			m_context->ALPHA.A == 0 && m_context->ALPHA.B == 1 && m_context->ALPHA.C == 0 && m_context->ALPHA.D == 1)
+			return;
 	}
 
 	// Sometimes everything will get reset and it will draw a single black point in the top left corner,

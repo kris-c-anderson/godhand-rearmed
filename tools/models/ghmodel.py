@@ -261,15 +261,39 @@ def trim_mdb(mdb, axis, minimum, tint=None, inset=None):
             vbs.append(out)
     return dict(vbs=vbs or empty_mdb(0)['vbs'], hdr=mdb['hdr'])
 
-def merge_model(game_dat, mod_scr, mod_tm3, keep=KEEP, append_textures=True, trim=None):
+def merge_model(game_dat, mod_scr, mod_tm3, keep=KEEP, append_textures=True, trim=None, paint=None):
     """The game's file with the mod's nodes (by name; 'keep' nodes stay the game's, any other node is drawn as nothing)
-    and textures (by name; new names are appended unless append_textures is False). trim: {node: (axis, minimum)}
-    cuts kept nodes (trim_mdb)."""
+    and textures (by name; new names are appended unless append_textures is False). trim: {node: (axis, minimum[,
+    tint[, inset]])} cuts kept nodes (trim_mdb). paint: {node: (texture names, fur texture name in the mod's tm3,
+    start, length)}: the game's named textures get the mod's fur painted where the kept node's vertices lie within
+    'length' beyond axis.p = start (paint.py), so the arm comes out of the fur."""
     ents=dat_read(game_dat)
     out=[]
     mod_kind, mod_nodes = scr_read(mod_scr)
     mods={n['name']: mdb_read(mod_scr, n['mdb_off']) for n in mod_nodes}
     mod_tex=[(nm,t) for nm,t,_ in tm3_read(mod_tm3)]
+    painted={}
+    if paint:
+        try:
+            import paint as painter
+            from ghtex import tim3_decode
+        except ImportError as e:
+            print("  warning: the arm textures are not painted (%s: pip install numpy pillow)"%e); paint=None
+    if paint:
+        game_tex=[(nm,tb) for tt,dd,oo in ents if tt=='TM3' and dd is not None for nm,tb,_ in tm3_read(dd)]
+        for tt,dd,oo in ents:
+            if tt!='MD' or dd is None or dd[:3]!=b'scr': continue
+            kind,nodes=scr_read(dd)
+            for nd in nodes:
+                if nd['name'] in paint:
+                    names,fur_name,start,length=paint[nd['name']]
+                    mdb=mdb_read(dd,nd['mdb_off'])
+                    if trim and nd['name'] in trim: mdb=trim_mdb(mdb,*trim[nd['name']])
+                    fur=[tb for nm,tb in mod_tex if nm==fur_name]
+                    if not fur: raise SystemExit('paint: the mod has no texture %s'%fur_name)
+                    fur_rgba,_=tim3_decode(fur[0])
+                    axis=trim[nd['name']][0] if trim and nd['name'] in trim else (-1,0,0)
+                    painted.update(painter.paint_textures(game_tex,mdb,names,fur_rgba,axis,start,length))
     for t,d,o in ents:
         if t=='MD' and d is not None and d[:3]==b'scr':
             kind,nodes=scr_read(d)
@@ -284,12 +308,14 @@ def merge_model(game_dat, mod_scr, mod_tm3, keep=KEEP, append_textures=True, tri
                 else: mdb=empty_mdb(4 if len(m0['bones'])>4 else 0)
                 new.append(dict(name=nd['name'], mdb=dict(vbs=mdb['vbs'], hdr=mdb['hdr']), srt=nd['srt'], tail=nd['tail']))
             d=scr_write(kind,new,bones,anchor)
-        elif t=='TM3' and d is not None and mod_tex:
+        elif t=='TM3' and d is not None and (mod_tex or painted):
             texs=[(nm,tb) for nm,tb,_ in tm3_read(d)]
             names=[nm for nm,_ in texs]
             for name,tb in mod_tex:
                 if name in names: texs[names.index(name)]=(name,tb)
                 elif append_textures: texs.append((name,tb)); names.append(name)
+            for name,tb in painted.items():
+                if name in names: texs[names.index(name)]=(name,tb)
             d=tm3_write(texs)
         out.append((t,d))
     return dat_build(out)

@@ -261,15 +261,18 @@ for name in names:
             dl=bm.verts.layers.deform.verify(); cv[dl][7]=1.0  # the centre rides Gene's upper-arm bone, like the ring
             ref={v:v.link_loops[0] for v in ringv}
             mat=ring[0].link_faces[0].material_index
+            cv2=bm.verts.new(centre); cv2[dl][7]=1.0
             for e in ring:
                 a,b=e.verts
-                # wind the cap towards the hand (-x), so it faces out of the stump
-                f=bm.faces.new((a,b,cv)) if (b.co-a.co).cross(cv.co-a.co).x<0 else bm.faces.new((b,a,cv))
-                f.material_index=mat
-                for l in f.loops:
-                    if l.vert in ref: l[uvl].uv=ref[l.vert][uvl].uv.copy()
-                    else: l[uvl].uv=sum((ref[v][uvl].uv for v in ringv),Vector((0,0)))/len(ringv)  # the centre: the ring's mean
-            cv.normal_update()
+                # wind the cap towards the hand (-x), so it faces out of the stump, plus a second copy facing the
+                # shoulder: the ring is not flat, so from some angles part of the cap is seen from behind
+                front=(b.co-a.co).cross(cv.co-a.co).x<0
+                for f in (bm.faces.new((a,b,cv)) if front else bm.faces.new((b,a,cv)), bm.faces.new((b,a,cv2)) if front else bm.faces.new((a,b,cv2))):
+                    f.material_index=mat
+                    for l in f.loops:
+                        if l.vert in ref: l[uvl].uv=ref[l.vert][uvl].uv.copy()
+                        else: l[uvl].uv=sum((ref[v][uvl].uv for v in ringv),Vector((0,0)))/len(ringv)  # the centre: the ring's mean
+            cv.normal_update(); cv2.normal_update()
             print('CAP',len(ring),'edges, centre',tuple(round(c,3) for c in centre))
         bm.verts.index_update()
     bm.to_mesh(me); bm.free()

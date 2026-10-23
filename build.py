@@ -9,8 +9,9 @@
     python -I build.py configure [-DOPTION=...]       CMake configure (Ninja, RelWithDebInfo, no LTCG)
     python -I build.py build [target]                 compile godhand.exe (configures first if needed)
     python -I build.py all [--iso X]                  generate -> configure -> build
-    python -I build.py characters [--iso X] [id ...]  playable characters (assets/characters) built from your disc
-                                                      into build/port/bin/mods/characters
+    python -I build.py characters [--iso X] [--texture-pack D] [id ...]  playable characters (assets/characters) built
+                                                      from your disc into build/port/bin/mods/characters (D: the HD
+                                                      pack folder, for the painted textures' full-resolution versions)
     python -I build.py boot [--seconds N] [--iso X]   one hidden, time-capped run; output in build/port/bin/logs
     python -I build.py run [args]                     a normal run in a window (arguments go to godhand.exe)
     python -I build.py status                         what exists so far
@@ -841,8 +842,12 @@ def characters(args=()):
     if not iso:
         print("No disc image found. Put your own God Hand (USA) image in game/, set GODHAND_ISO or pass --iso.")
         return 1
+    pack = None
+    if "--texture-pack" in args and args.index("--texture-pack") + 1 < len(args):
+        i = args.index("--texture-pack"); pack = args[i + 1]; del args[i:i + 2]
     sys.path.insert(0, str(ROOT / "tools" / "models"))
     import build_characters
+    build_characters.texture_pack = pack or None  # the HD pack the painted arm textures start from (optional)
     BIN.mkdir(parents=True, exist_ok=True)
     return build_characters.build(str(iso), str(BIN), tuple(args))
 
