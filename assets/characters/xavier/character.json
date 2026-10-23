@@ -3,8 +3,7 @@
     "pl/pl00.dat": {
       "nodes": "xavier_nodes.scr",
       "textures": "xavier_textures.tm3",
-      
-    "trim": {
+      "trim": {
         "GH_00": {
           "axis": [
             -1,
@@ -19,14 +18,14 @@
             0,
             0
           ],
-          "min": 0.27,
+          "min": 0.24,
           "tint": {
             "start": 0.284,
-            "length": 0.08,
+            "length": 0.1,
             "rgb": [
-              54,
-              44,
-              44
+              74,
+              60,
+              58
             ]
           }
         }

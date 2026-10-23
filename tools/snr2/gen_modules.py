@@ -123,6 +123,10 @@ def main(argv):
             print("%-7s %s base %#010x, toml kept (hand-written)" % (mod, emitted, base))
             continue
         old = open(path, encoding="utf-8").read() if os.path.exists(path) else None
+        if old is not None and "[[patches." in old:
+            # A toml with switchable patches added by hand (r020: Unlock Hard) is the project's; keep it.
+            print("%-7s %s base %#010x, toml kept (has patches)" % (mod, emitted, base))
+            continue
         if old != text:
             with open(path, "w", encoding="utf-8", newline="\n") as f:
                 f.write(text)

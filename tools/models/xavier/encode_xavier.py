@@ -103,10 +103,11 @@ for idx,nm,TW,TH,alpha,parts in SLOTS:
         big[ry0*S:(ry0+rh)*S,rx0*S:(rx0+rw)*S]=np.asarray(crop.resize((rw*S,rh*S),Image.LANCZOS))
     hd[idx]=big
     if alpha:
-        # Gene's hair is drawn with its texture's alpha: opaque texels are exactly 0x80 there. Near-opaque and
-        # near-clear texels snap to those, so the hair's body is solid and only its strands blend.
+        # Gene's hair is drawn with its texture's alpha: opaque texels are exactly 0x80 there. Texels from 63% alpha
+        # up snap to opaque and near-clear ones to clear, so the hair's body is solid (strips under a strip no longer
+        # show through its half-transparent texels) and only the strand tips blend.
         for a in (canvas,big):
-            a[...,3]=np.where(a[...,3]>=224,255,np.where(a[...,3]<=24,0,a[...,3]))
+            a[...,3]=np.where(a[...,3]>=160,255,np.where(a[...,3]<=24,0,a[...,3]))
     arr=canvas
     sel=arr[mask] if mask.sum()>32 else arr.reshape(-1,4)
     if alpha:
@@ -117,7 +118,7 @@ for idx,nm,TW,TH,alpha,parts in SLOTS:
         pal3=np.array(q.getpalette()[:48],np.uint8).reshape(-1,3); pal=np.hstack([pal3,np.full((len(pal3),1),255,np.uint8)])
     while len(pal)<16: pal=np.vstack([pal,pal[-1:]])
     pal=pal[:16]
-    if alpha: pal[:,3]=np.where(pal[:,3]>=224,255,np.where(pal[:,3]<=24,0,pal[:,3]))
+    if alpha: pal[:,3]=np.where(pal[:,3]>=160,255,np.where(pal[:,3]<=24,0,pal[:,3]))
     d=((arr[:,:,None,:].astype(int)-pal[None,None,:,:].astype(int))**2)
     if not alpha: d=d[...,:3]
     ind=np.argmin(d.sum(-1),-1)

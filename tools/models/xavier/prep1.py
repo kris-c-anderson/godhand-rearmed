@@ -28,15 +28,15 @@ names=['XavierBody','XavierHair','XavierNecklace','XavierShoulderPad','Xaviersna
 # PAD_RADIAL around the upper arm and PAD_AXIAL along it.
 ARM_CUT=0.5; PAD_RADIAL=1.16; PAD_AXIAL=1.05
 # The cut's open ring is capped (a disc of fur), so nothing shows through the stump around the God Hand arm.
-# Butt: the cheeks scaled towards the pelvis by BUTT_SCALE (1 = as modelled), weighted by the butt bones, so they
+# Butt: the cheeks scaled towards the pelvis by BUTT_SCALE (1 = as modelled; 0.945 after two rounds in game), weighted by the butt bones, so they
 # stay inside the loincloth. Hair: every strip pushed out along its normals by HAIR_LIFT, plus up to HAIR_STAGGER
 # more for the outer strips (ordered by distance from the head), so strips lying on the scalp or on each other no
 # longer z-fight; HAIR_SHORTEN raises the hair below the ears towards them (1 = as modelled; 0.85 = the part below
 # ear level 15% shorter); HAIR_FLARE pushes the hair below the ears back from the neck by that much (metres),
 # scaled by how far below the ears it is. All overridable from the environment for variants.
 def _env(n,d): return float(os.environ.get(n,d))
-BUTT_SCALE=_env('XAVIER_BUTT_SCALE',0.96)
-HAIR_LIFT=_env('XAVIER_HAIR_LIFT',0.003); HAIR_STAGGER=_env('XAVIER_HAIR_STAGGER',0.004)
+BUTT_SCALE=_env('XAVIER_BUTT_SCALE',0.945)
+HAIR_LIFT=_env('XAVIER_HAIR_LIFT',0.004); HAIR_STAGGER=_env('XAVIER_HAIR_STAGGER',0.008)
 HAIR_SHORTEN=_env('XAVIER_HAIR_SHORTEN',0.9); HAIR_FLARE=_env('XAVIER_HAIR_FLARE',0.02)
 HAIR_EAR_Z=1.62   # ear level, Blender z (game y) after scaling to Gene's height
 Rarm=['def_arm_0.R','def_arm_1.R','def_arm_1_bridge.R','def_arm_1_elbow_dc_0.R','def_hand_0.R']+['def_finger_%d_%d'%(i,j) for i in range(5) for j in range(3)]
@@ -236,7 +236,7 @@ for name in names:
         bm.to_mesh(me); bm.free()
     # delete right arm & mouth interior
     bm=bmesh.new(); bm.from_mesh(me); bm.verts.ensure_lookup_table()
-    kill=[]; cap_index=None
+    kill=[]
     if name=='XavierBody':
         mouth=[i for i,s in enumerate(ob.material_slots) if s.material and s.material.name=='mouth']
         killf=[f for f in bm.faces if f.material_index in mouth]
@@ -256,6 +256,7 @@ for name in names:
             ringv=set(v for e in ring for v in e.verts)
             centre=sum((v.co for v in ringv),Vector())/len(ringv)
             cv=bm.verts.new(centre)
+            dl=bm.verts.layers.deform.verify(); cv[dl][7]=1.0  # the centre rides Gene's upper-arm bone, like the ring
             ref={v:v.link_loops[0] for v in ringv}
             mat=ring[0].link_faces[0].material_index
             for e in ring:
@@ -268,10 +269,8 @@ for name in names:
                     else: l[uvl].uv=sum((ref[v][uvl].uv for v in ringv),Vector((0,0)))/len(ringv)  # the centre: the ring's mean
             cv.normal_update()
             print('CAP',len(ring),'edges, centre',tuple(round(c,3) for c in centre))
-        bm.verts.index_update(); cap_index=len(bm.verts)-1 if ring else None
+        bm.verts.index_update()
     bm.to_mesh(me); bm.free()
-    if name=='XavierBody' and cap_index is not None:
-        new.vertex_groups[7].add([cap_index],1.0,'REPLACE')  # the cap's centre rides Gene's upper-arm bone, like the ring
     out_objs.append(new)
     print('OBJ',name,'verts',len(me.vertices),'faces',len(me.polygons))
 

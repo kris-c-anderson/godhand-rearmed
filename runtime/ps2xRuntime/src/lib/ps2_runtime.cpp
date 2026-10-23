@@ -26,6 +26,7 @@
 #include "ps2_host_input.h"
 void ps2xSetLocalToHostGs(GS *gs); // ps2_memory.cpp: VIF1 FIFO image downloads
 void ps2xRequestVu1Trace(uint32_t fields); // vu/ps2_vu1_core.cpp: F8 debug capture
+void ps2xRequestGifDump(uint32_t fields, const char *path); // gs/gs_pcsx2_backend.cpp: F10 GIF dump (PCSX2 renderer)
 bool ps2xVu1LastRunHitBudget(); // vu/ps2_vu1_core.cpp: sweep R2
 #include "ps2x/iop/iop_subsystem.h"
 
@@ -3368,6 +3369,15 @@ void PS2Runtime::run()
             }
             ps2xRequestVu1Trace(2u);
             std::fprintf(stderr, "[F8] wrote %s, VU1 trace requested\n", name);
+        }
+        if (!controlsOpen && IsKeyPressed(KEY_F10))
+        {
+            // Debug capture: the GIF stream of the next 2 fields as sent to PCSX2's GS (gif_<tick>.bin, the
+            // PS2X_GIF_DUMP format; tools/gs/gif_dump.py lists its draws).
+            const unsigned long long tick = static_cast<unsigned long long>(m_memory.gs().vsyncTick.load());
+            char name[64];
+            std::snprintf(name, sizeof(name), "gif_%llu.bin", tick);
+            ps2xRequestGifDump(2u, name);
         }
 
         if (WindowShouldClose())

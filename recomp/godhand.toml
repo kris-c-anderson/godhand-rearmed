@@ -150,10 +150,17 @@ address = "0x00145C88"
 hook = "gh_roulette_slide_end"
 flag = "frame_hook"
 
-# [Game] MuteMusic: music streams (cSndBgmNode) get volume 0 (before the first instruction of func_00373FF0, the SDE
-# stream volume setter; src/godhand/game_options.cpp).
+# [Game] MuteMusic: music streams (cSndBgmNode) get volume 0 before the first instruction of the SDE stream volume
+# setters (src/godhand/game_options.cpp): func_00373FF0 (node a0, category a1, volume f12) for a one-channel node,
+# func_003745C0 (node a0, category a1, channel a2, volume f12) for a node with 2+ channels (node+0x58 > 1: the
+# stereo ADX music; UpdateSequenceNodeWeighted_373560 picks between them).
 [[patches.hooks]]
 address = "0x00373FF0"
+hook = "gh_mute_music_volume"
+flag = "mute_music"
+
+[[patches.hooks]]
+address = "0x003745C0"
 hook = "gh_mute_music_volume"
 flag = "mute_music"
 

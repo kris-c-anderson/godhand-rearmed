@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <mutex>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -75,7 +76,7 @@ namespace
     // PS2X_GIF_DUMP=<start seconds>:<fields>:<file>: the GIF stream sent to PCSX2's GS, from the first vsync after
     // <start seconds> of run time, for <fields> fields. Records (little endian): 'M' u32 size + GS local memory at the
     // start, 'G' u32 size + GIF qwords as sent, 'V' u32 size + u64 field + GSVSyncRegs at each vsync.
-    // tools/gif_dump.py lists the draws.
+    // tools/gs/gif_dump.py lists the draws.
     struct GifDump
     {
         double startSeconds = 0.0;
@@ -104,6 +105,8 @@ namespace
         return dump;
     }
 
+    std::mutex g_gifDumpRequest;
+
     void gifDumpRecord(char type, const void *data, uint32_t size, const void *prefix = nullptr, uint32_t prefixSize = 0u)
     {
         GifDump &dump = gifDump();
@@ -115,6 +118,29 @@ namespace
         std::fwrite(data, 1, size, dump.file);
     }
 
+}
+
+// F10 (ps2_runtime.cpp): a PS2X_GIF_DUMP of the next <fields> fields into <path>, started at the next vsync. Nothing
+// happens while a dump is still being written.
+void ps2xRequestGifDump(uint32_t fields, const char *path)
+{
+    std::lock_guard<std::mutex> lock(g_gifDumpRequest);
+    GifDump &dump = gifDump();
+    if (!dump.done && dump.file)
+        return;
+    std::FILE *file = std::fopen(path, "wb");
+    if (!file)
+        return;
+    dump.file = file;
+    dump.fields = fields;
+    dump.startSeconds = 0.0;
+    dump.active = false;
+    dump.done = false;
+    std::fprintf(stderr, "[gs] GIF dump of the next %u fields requested: %s\n", fields, path);
+}
+
+namespace
+{
     // Bytes per pixel in a host <-> local transfer (PCSX2's trbpp).
     uint32_t transferBits(uint32_t psm)
     {
