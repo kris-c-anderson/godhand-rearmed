@@ -567,7 +567,7 @@ void GSPcsx2Backend::VSync(const GSVSyncRegs &regs)
 void ps2x::gs::setAspect(Aspect aspect)
 {
     if (g_setAspect)
-        g_setAspect(aspect == Aspect::Stretch ? 2u : aspect == Aspect::R16_9 ? 1u : 0u);
+        g_setAspect(aspect == Aspect::Force4_3 ? 3u : aspect == Aspect::Stretch ? 2u : aspect == Aspect::R16_9 ? 1u : 0u);
 }
 
 #else // no pcsx2gs_api.h: the built-in GS only

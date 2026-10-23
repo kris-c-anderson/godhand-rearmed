@@ -353,6 +353,7 @@ namespace
         {"game", "iso", "GODHAND_ISO"},
         {"game", "fps60", "GODHAND_FPS60"},
         {"game", "l3dash", "GODHAND_L3_DASH"},
+        {"game", "roulettetimer", "GODHAND_ROULETTE_TIMER"},
         {"run", "headless", "GODHAND_HEADLESS"},
         {"run", "timelimitseconds", "GODHAND_TIME_LIMIT_SECONDS"},
         {"run", "dumpontimelimit", "GODHAND_DUMP_ON_TIME_LIMIT"},
@@ -365,6 +366,7 @@ namespace
         {"video", "windowsize", "PS2X_WINDOW_SIZE"},
         {"video", "aspectratio", "GODHAND_ASPECT"},
         {"video", "hudlayout", "GODHAND_HUD"},
+        {"video", "menulayout", "GODHAND_MENUS"},
         {"video", "startfullscreen", "GODHAND_START_FULLSCREEN"},
         {"launcher", "show", "GODHAND_LAUNCHER"},
     };

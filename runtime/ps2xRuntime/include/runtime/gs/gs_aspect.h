@@ -6,9 +6,10 @@ namespace ps2x::gs
 {
     enum class Aspect
     {
-        R4_3,
+        R4_3,     // the game's shape (its custom widescreen aspect when it set one)
         R16_9,
-        Stretch, // fill the window
+        Stretch,  // fill the window
+        Force4_3, // 4:3 even when the game set a widescreen aspect (menus drawn for 4:3: pillarboxed)
     };
 
     void setAspect(Aspect aspect);

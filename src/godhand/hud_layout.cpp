@@ -1,4 +1,5 @@
-// Widescreen HUD layouts (see hud_layout.h). Hooks in recomp/godhand.toml (flag "widescreen"):
+// Widescreen HUD layouts (see hud_layout.h). Hooks in recomp/godhand.toml (flag "hud2d", always on: the menu
+// detection runs at 4:3 too; the narrowing only when wide):
 //
 //   Gp_draw_line/poly3/poly4/polyFT4/polyG4 and the three sprite drawers (0x15B138..0x15DDF8): after each converts
 //   its vertices to GS coordinates (x = (screen x + 0x800 - width/2) * 16, the screen width at 0x3C1180), the x of
@@ -24,6 +25,7 @@
 #include "godhand/log.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
+#include "runtime/gs/gs_aspect.h"
 
 #include <algorithm>
 #include <cctype>
@@ -60,6 +62,30 @@ namespace godhand::hud
         constexpr uint32_t kPlayerBar = 0xF0000001u, kRadar = 0xF0000002u, kRoulette = 0xF0000003u;
 
         Layout g_layout = Layout::Anchored;
+
+        // Menus and screens (the pause menu, options, the roulette setup...) are drawn for 4:3 and partly through
+        // drawers the 2D narrowing does not reach, so their layers cannot be lined up by narrowing. A frame that
+        // draws a full-screen background inside a non-HUD layout is a menu frame: then nothing is narrowed and the
+        // picture is shown 4:3 (pillarboxed), or stretched with GODHAND_MENUS=stretch ([Video] MenuLayout).
+        enum class MenuMode
+        {
+            Pillarbox,
+            Stretch,
+        };
+        MenuMode g_menuMode = MenuMode::Pillarbox;
+        bool g_menuSeen = false;  // a menu background this frame
+        int g_menuHold = 0;       // frames the menu state lasts without one (covers a few frames of transitions)
+        bool g_menuAspect = false; // the picture is forced to 4:3 now
+
+        void setMenuAspect(bool on)
+        {
+            if (on == g_menuAspect)
+                return;
+            g_menuAspect = on;
+            ps2x::gs::setAspect(on ? ps2x::gs::Aspect::Force4_3 : ps2x::gs::Aspect::R4_3);
+        }
+
+        bool menuNow() { return g_menuSeen || g_menuHold > 0; }
         bool g_wide = false;
         float g_k = 1.0f;
         float g_edgeShare = 0.0f; // HUD edges: the 16:9 area's edges, as a share of the half width from the centre
@@ -209,8 +235,21 @@ namespace godhand::hud
             const float none = std::nanf("");
             if (n >= 2 && x1 - x0 >= 0.9f * width)
             {
+                // Full height too: letterbox bars in cutscenes are full width but thin.
+                const float height = 448.0f; // the game's 2D screen (0..448, NTSC)
+                if (g_inIdTrans && !g_ctx.active && !g_menuSeen && y1 - y0 >= 0.8f * height)
+                {
+                    g_menuSeen = true; // a menu's background (fades are drawn outside any layout)
+                    if (g_wide && g_menuMode == MenuMode::Pillarbox)
+                        setMenuAspect(true);
+                }
                 dumpPrim(tag, caller, x0, x1, y0, y1, "fullwidth", none);
                 return; // full-screen quad: backgrounds, fades
+            }
+            if (!g_wide || menuNow())
+            {
+                dumpPrim(tag, caller, x0, x1, y0, y1, "menu", none);
+                return;
             }
             float anchor;
             if (g_ctx.active)
@@ -255,6 +294,8 @@ namespace godhand::hud
         // func_0015C410 before "sw $a3,0x40($sp)": one strip vertex's GS x in $a3.
         void stripVertex(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
+            if (!g_wide || menuNow())
+                return;
             const float width = screenWidth(rdram);
             const int32_t offset = gsOffset(rdram);
             const float xs = static_cast<float>(GPR_S32(ctx, 7) - offset) / 16.0f;
@@ -435,10 +476,21 @@ namespace godhand::hud
     bool narrowFont() { return false; }
     bool narrowGauge() { return false; }
 
+    bool menuActive() { return menuNow(); }
+
     void onFrame(uint8_t *)
     {
+        g_menuHold = g_menuSeen ? 8 : std::max(0, g_menuHold - 1);
+        g_menuSeen = false;
+        if (g_wide)
+            setMenuAspect(g_menuHold > 0 && g_menuMode == MenuMode::Pillarbox);
         if (!g_wide)
+        {
+            g_ctx = Context{};
+            g_region = Region::None;
+            g_inIdTrans = false;
             return;
+        }
         g_last.swap(g_seen);
         g_seen.clear();
         g_ctx = Context{};
@@ -480,10 +532,18 @@ namespace godhand::hud
     {
         g_wide = wide;
         g_k = k;
+        ps2xSetPatchFlag("hud2d", true);
         // k = (4/3) / aspect; the 16:9 area takes (16/9) / aspect of the width. Below 16:9 the HUD has no edges.
         const float aspect = (4.0f / 3.0f) / k;
         g_edgeShare = aspect >= 16.0f / 9.0f - 0.01f ? std::min(1.0f, (16.0f / 9.0f) / aspect) : 0.0f;
         g_layout = parseLayout(std::getenv("GODHAND_HUD"));
+        {
+            const char *menus = std::getenv("GODHAND_MENUS");
+            std::string value = menus ? menus : "";
+            for (char &c : value)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            g_menuMode = value == "stretch" || value == "stretched" ? MenuMode::Stretch : MenuMode::Pillarbox;
+        }
         ps2xRegisterHostHook("gh_hud_line", &gpVertices<2, 0x70u>);
         ps2xRegisterHostHook("gh_hud_poly3", &gpVertices<3, 0x80u>);
         ps2xRegisterHostHook("gh_hud_poly4", &gpVertices<4, 0x90u>);

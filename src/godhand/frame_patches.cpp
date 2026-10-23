@@ -35,6 +35,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 namespace godhand
 {
@@ -87,17 +88,46 @@ namespace godhand
         // stick hold, and marked as injected so the next frame puts the reading back.
         uint32_t g_dashFrames = 0; // frames since L3 went down (0 = not held)
 
+        // A stick value written over the game's: the reading is kept and the next frame puts it back.
+        void injectStick(uint8_t *rdram, int axis, uint8_t value)
+        {
+            if (g_stickInjected[axis] < 0)
+                g_stickRaw[axis] = ram8(rdram, kStickBytes[axis]);
+            ram8(rdram, kStickBytes[axis]) = value;
+            g_stickInjected[axis] = value;
+        }
+
+        // At 30 frames/s (the 60 FPS stick hold does this itself): stick values written last frame that the game did
+        // not replace go back to the reading.
+        void restoreInjected(uint8_t *rdram)
+        {
+            for (int axis = 0; axis < 4; ++axis)
+            {
+                if (g_stickInjected[axis] >= 0 && ram8(rdram, kStickBytes[axis]) == static_cast<uint8_t>(g_stickInjected[axis]))
+                    ram8(rdram, kStickBytes[axis]) = g_stickRaw[axis];
+                g_stickInjected[axis] = -1;
+            }
+        }
+
+        // In menus the d-pad's up and down also push the left stick: some lists (the roulette setup's technique list)
+        // scroll only with the stick.
+        void menuDpad(uint8_t *rdram)
+        {
+            if (!hud::menuActive())
+                return;
+            uint16_t buttons = 0;
+            std::memcpy(&buttons, &ram8(rdram, kPadButtons), sizeof(buttons));
+            const bool up = (buttons & 0x10u) != 0u, down = (buttons & 0x40u) != 0u;
+            if (up == down)
+                return;
+            injectStick(rdram, 1, up ? 0x00u : 0xFFu);
+            injectStick(rdram, 3, up ? 0x00u : 0xFFu);
+        }
+
         void l3Dash(uint8_t *rdram)
         {
             if (!g_l3Dash)
                 return;
-            if (!g_fps60) // the 60 FPS stick hold already puts stale injected values back
-                for (int axis = 0; axis < 4; ++axis)
-                {
-                    if (g_stickInjected[axis] >= 0 && ram8(rdram, kStickBytes[axis]) == static_cast<uint8_t>(g_stickInjected[axis]))
-                        ram8(rdram, kStickBytes[axis]) = g_stickRaw[axis];
-                    g_stickInjected[axis] = -1;
-                }
             uint16_t buttons = 0;
             std::memcpy(&buttons, &ram8(rdram, kPadButtons), sizeof(buttons));
             if (buttons != 2u)
@@ -116,11 +146,7 @@ namespace godhand
                 const bool vertical = (axis & 1) != 0;
                 if (!vertical && !tapping)
                     continue;
-                const uint8_t value = vertical ? forward : 0x80u;
-                if (g_stickInjected[axis] < 0)
-                    g_stickRaw[axis] = ram8(rdram, kStickBytes[axis]);
-                ram8(rdram, kStickBytes[axis]) = value;
-                g_stickInjected[axis] = value;
+                injectStick(rdram, axis, vertical ? forward : 0x80u);
             }
         }
 
@@ -134,7 +160,9 @@ namespace godhand
             hud::onFrame(rdram);
             if (!g_fps60)
             {
+                restoreInjected(rdram);
                 l3Dash(rdram);
+                menuDpad(rdram);
                 return;
             }
             ram8(rdram, kFrameDivider) = 1u;
@@ -177,6 +205,7 @@ namespace godhand
             if (g_frames % 3600u == 0u)
                 g_holds = g_staleRestores = 0u;
             l3Dash(rdram);
+            menuDpad(rdram);
         }
 
         // Replaces c.eq.s f0,f2 at 0x2C81C0: the condition is "same integer frame" (cvt.w.s of both).
@@ -187,13 +216,16 @@ namespace godhand
             ctx->fcr31 = last == current ? (ctx->fcr31 | 0x800000u) : (ctx->fcr31 & ~0x800000u);
         }
 
-        // Replaces sw v0,0x15B0(s1) at 0x1147CC (the player's roulette timer, decremented once per game frame): every
-        // other frame the store is skipped, so at 60 frames/s it lasts as long as on the PS2.
+        // The roulette's time: one count every g_roulettePeriod game frames. 1 at 30 frames/s, 2 at 60 (the PS2's
+        // time); [Game] RouletteTimer=double doubles it (2 at 30, 4 at 60), for the timer and the time to choose.
+        uint32_t g_roulettePeriod = 1;
+
+        // Replaces sw v0,0x15B0(s1) at 0x1147CC (the player's roulette timer, decremented once per game frame): the
+        // store happens once every g_roulettePeriod calls.
         void rouletteTimer(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            static bool skip = false;
-            skip = !skip;
-            if (skip)
+            static uint32_t calls = 0;
+            if (++calls % g_roulettePeriod != 0u)
                 return;
             const uint32_t value = GPR_U32(ctx, 2), address = GPR_U32(ctx, 17) + 0x15B0u;
             std::memcpy(&ram8(rdram, address), &value, sizeof(value));
@@ -250,9 +282,8 @@ namespace godhand
         // Replaces addiu v0,v0,-1 at 0x14530C (the roulette TIME dial, cCockRoulette +0x4D0): every other frame.
         void rouletteDial(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
-            static bool skip = false;
-            skip = !skip;
-            if (!skip)
+            static uint32_t calls = 0;
+            if (++calls % g_roulettePeriod == 0u)
                 SET_GPR_S32(ctx, 2, GPR_S32(ctx, 2) - 1);
         }
     }
@@ -272,6 +303,14 @@ namespace godhand
         ps2xRegisterHostHook("gh_fps60_wiggle_end", &wiggleEnd);
         ps2xSetPatchFlag("frame_hook", true); // always: it also counts game frames for the F3 overlay
         ps2xSetPatchFlag("fps60", g_fps60);
+        {
+            const char *timer = std::getenv("GODHAND_ROULETTE_TIMER");
+            const std::string value = timer ? timer : "";
+            const bool slow = value == "double" || value == "Double" || value == "2";
+            g_roulettePeriod = (g_fps60 ? 2u : 1u) * (slow ? 2u : 1u);
+            ps2xSetPatchFlag("roulette_timer", g_roulettePeriod > 1u);
+            GH_INFO(Game, "roulette timer: " << (slow ? "double" : "normal") << " (one count every " << g_roulettePeriod << " frames)");
+        }
         GH_INFO(Game, "frame rate: " << (g_fps60 ? "60 FPS mode (Fps60=1)" : "30 FPS, as on the PS2") << "; L3 dash: "
                                      << (g_l3Dash ? "on" : "off"));
     }

@@ -324,6 +324,7 @@ extern "C" __declspec(dllexport) const Pcsx2GsApi *pcsx2gs_get_api(uint32_t vers
 // it to follow the game's own 4:3 / 16:9 option. Exported on its own so that the API table above stays the same.
 extern "C" __declspec(dllexport) void pcsx2gs_set_aspect(uint32_t mode)
 {
+    // 3 = 4:3 even with a custom (widescreen) aspect: the port pillarboxes menus drawn for 4:3.
     EmuConfig.CurrentAspectRatio = mode == 2u ? AspectRatioType::Stretch : mode == 1u ? AspectRatioType::R16_9 : AspectRatioType::R4_3;
     if (mode == 0u && g_customAspect > 0.0f)
         EmuConfig.CurrentAspectRatio = AspectRatioType::RAuto4_3_3_2; // the widescreen shape stays

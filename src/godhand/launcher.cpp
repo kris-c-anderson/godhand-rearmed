@@ -35,6 +35,8 @@ namespace godhand::launcher
         constexpr Choice kAspects[] = {{"4:3 (the PS2's)", "4:3"}, {"16:9", "16:9"},  {"16:10", "16:10"},
                                        {"21:9", "21:9"},          {"32:9", "32:9"},  {"Match the screen", "auto"}};
         constexpr Choice kHudLayouts[] = {{"16:9: HUD at the screen edges", "16:9"}, {"4:3: HUD where the PS2 had it", "4:3"}};
+        constexpr Choice kMenuLayouts[] = {{"4:3: as on the PS2, with side bars", "4:3"}, {"Stretched to the screen", "stretch"}};
+        constexpr Choice kRouletteTimers[] = {{"Normal", "normal"}, {"Double time", "double"}};
         constexpr Choice kWindowModes[] = {{"Window", "window"}, {"Fullscreen (borderless)", "fullscreen"}, {"Maximized window", "maximized"}};
         constexpr Choice kWindowSizes[] = {{"Automatic (3/4 of the screen)", "auto"}, {"PS2 size", "native"}};
         constexpr Choice kResolutions[] = {{"1x  native (512x448)", "1"}, {"2x  1024x896", "2"}, {"3x  1536x1344", "3"},
@@ -458,6 +460,12 @@ namespace godhand::launcher
                         iniCombo(state, "##hud", "Video", "HudLayout", "16:9",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kHudLayouts, value); });
                         ImGui::EndDisabled();
+                        settingLabel("Menus", "Menus and screens (pause, options, roulette setup) are drawn for 4:3: "
+                                              "shown 4:3 with side bars, or stretched to the screen.");
+                        ImGui::BeginDisabled(lower(aspect) == "4:3");
+                        iniCombo(state, "##menus", "Video", "MenuLayout", "4:3",
+                                 [](const char *id, std::string &value) { return choiceCombo(id, kMenuLayouts, value); });
+                        ImGui::EndDisabled();
                         settingLabel("Window", "F11 switches between window and fullscreen while playing.");
                         {
                             std::string mode = state.ini.getBool("Video", "StartFullscreen", false)  ? "fullscreen"
@@ -517,6 +525,10 @@ namespace godhand::launcher
                         iniCheckbox(state, "On##fps60", "Game", "Fps60", false);
                         settingLabel("L3 dash", "Clicking the left stick dashes (a quick double tap forward).");
                         iniCheckbox(state, "On##l3", "Game", "L3Dash", false);
+                        settingLabel("Roulette timer", "How long you have to pick a roulette move. Double time gives "
+                                                       "twice as long (the dial runs half as fast), at 30 and 60 FPS.");
+                        iniCombo(state, "##roulette", "Game", "RouletteTimer", "normal",
+                                 [](const char *id, std::string &value) { return choiceCombo(id, kRouletteTimers, value); });
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();
