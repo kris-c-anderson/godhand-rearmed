@@ -113,6 +113,7 @@ namespace godhand
         // d-pad's up and down push the stick too. Seen through cCockRoulette move's dial step (0x145308, only while the
         // wheel is up), stamped with the game frame.
         uint64_t g_rouletteSeen = 0;
+        bool g_rouletteBack = false; // the last wheel step went up (see rouletteSlideBegin)
 
         void rouletteSeen(uint8_t *, R5900Context *, PS2Runtime *) { g_rouletteSeen = g_gameFrame; }
 
@@ -125,7 +126,70 @@ namespace godhand
             uint16_t buttons = 0;
             std::memcpy(&buttons, &ram8(rdram, kPadButtons), sizeof(buttons));
             const bool up = (buttons & 0x10u) != 0u || ram8(rdram, kStickBytes[1]) < 0x40u;
+            g_rouletteBack = up && count > 1;
             SET_GPR_S32(ctx, 3, up && count > 0 ? (cursor + count - 1) % count : cursor + 1);
+        }
+
+        // The wheel's slide (the rest of that function: progress +0x338 from 1.0 to 0 and a 32.0 offset +0x2A4, both
+        // x0.7 a frame) only knows forward steps. A back step to c is drawn as the forward step c -> c+1 played
+        // backwards: cursor c+1 and progress 1-p while the slide runs, then put back after the slots are placed.
+        bool g_rouletteSwapped = false;
+        uint16_t g_rouletteSavedCursor = 0;
+        float g_rouletteSavedP = 0.0f, g_rouletteSavedA = 0.0f;
+
+        float ramF32(uint8_t *rdram, uint32_t address)
+        {
+            float value = 0.0f;
+            std::memcpy(&value, &ram8(rdram, address), sizeof(value));
+            return value;
+        }
+
+        void setRamF32(uint8_t *rdram, uint32_t address, float value) { std::memcpy(&ram8(rdram, address), &value, sizeof(value)); }
+
+        // Before lwc1 f0,0x2A4(s1) at 0x1458E8 (after the step), s1 = the wheel.
+        void rouletteSlideBegin(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            g_rouletteSwapped = false;
+            const uint32_t wheel = GPR_U32(ctx, 17);
+            const float p = ramF32(rdram, wheel + 0x338u), a = ramF32(rdram, wheel + 0x2A4u);
+            if (!g_rouletteBack || !(a > 1.0f))
+                return;
+            int16_t count = 0;
+            uint16_t cursor = 0;
+            std::memcpy(&count, &ram8(rdram, wheel + 0x3B2u), sizeof(count));
+            std::memcpy(&cursor, &ram8(rdram, wheel + 0x422u), sizeof(cursor));
+            if (count <= 1)
+                return;
+            g_rouletteSavedCursor = cursor;
+            g_rouletteSavedP = p;
+            g_rouletteSavedA = a;
+            g_rouletteSwapped = true;
+            const uint16_t next = static_cast<uint16_t>((cursor + 1) % count);
+            const float back = 1.0f - p;
+            std::memcpy(&ram8(rdram, wheel + 0x422u), &next, sizeof(next));
+            setRamF32(rdram, wheel + 0x338u, back);
+            setRamF32(rdram, wheel + 0x2A4u, 32.0f * back);
+            // The incoming slot (+0xE4) is hidden (+0x2C bit 8) whenever the wheel is at rest; same for the reversed
+            // progress, so the first frame shows the old wheel exactly.
+            uint32_t incoming = 0, flags = 0;
+            std::memcpy(&incoming, &ram8(rdram, wheel + 0xE4u), sizeof(incoming));
+            if (incoming == 0u)
+                return;
+            std::memcpy(&flags, &ram8(rdram, incoming + 0x2Cu), sizeof(flags));
+            flags = 32.0f * back > 1.0f ? (flags & ~8u) : (flags | 8u);
+            std::memcpy(&ram8(rdram, incoming + 0x2Cu), &flags, sizeof(flags));
+        }
+
+        // Before lw v0,0x90(s1) at 0x145C88 (after the slot loop).
+        void rouletteSlideEnd(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            if (!g_rouletteSwapped)
+                return;
+            g_rouletteSwapped = false;
+            const uint32_t wheel = GPR_U32(ctx, 17);
+            std::memcpy(&ram8(rdram, wheel + 0x422u), &g_rouletteSavedCursor, sizeof(uint16_t));
+            setRamF32(rdram, wheel + 0x338u, g_rouletteSavedP);
+            setRamF32(rdram, wheel + 0x2A4u, g_rouletteSavedA);
         }
 
         void rouletteDpad(uint8_t *rdram)
@@ -316,6 +380,8 @@ namespace godhand
         ps2xRegisterHostHook("gh_fps60_roulette_dial", &rouletteDial);
         ps2xRegisterHostHook("gh_roulette_seen", &rouletteSeen);
         ps2xRegisterHostHook("gh_roulette_step", &rouletteStep);
+        ps2xRegisterHostHook("gh_roulette_slide_begin", &rouletteSlideBegin);
+        ps2xRegisterHostHook("gh_roulette_slide_end", &rouletteSlideEnd);
         ps2xRegisterHostHook("gh_fps60_ui_anim", &uiAnimStep);
         ps2xRegisterHostHook("gh_fps60_button_timer", &buttonTimer);
         ps2xRegisterHostHook("gh_fps60_wiggle_begin", &wiggleBegin);

@@ -27,6 +27,7 @@
 #include "godhand/log.h"
 #include "godhand/movie_watchdog.h"
 #include "godhand/frame_patches.h"
+#include "godhand/game_options.h"
 #include "godhand/widescreen.h"
 #if GODHAND_HAS_LAUNCHER
 #include "godhand/launcher.h"
@@ -354,6 +355,8 @@ namespace
         {"game", "fps60", "GODHAND_FPS60"},
         {"game", "l3dash", "GODHAND_L3_DASH"},
         {"game", "roulettetimer", "GODHAND_ROULETTE_TIMER"},
+        {"game", "unlockhard", "GODHAND_UNLOCK_HARD"},
+        {"sound", "mutemusic", "GODHAND_MUTE_MUSIC"},
         {"run", "headless", "GODHAND_HEADLESS"},
         {"run", "timelimitseconds", "GODHAND_TIME_LIMIT_SECONDS"},
         {"run", "dumpontimelimit", "GODHAND_DUMP_ON_TIME_LIMIT"},
@@ -894,6 +897,7 @@ int main(int argc, char *argv[])
         godhand::installMovieWatchdog(runtime); // sweep R3: ending/movie-list movie polls cannot spin forever
         // 60 FPS mode, L3 dash, and the game-frame count for the F3 overlay (a hook at the top of the main loop).
         godhand::installFramePatches(runtime);
+        godhand::installGameOptions(runtime); // [Game] UnlockHard, [Sound] MuteMusic
         godhand::hangdump::setRuntime(&runtime);
         godhand::calltrace::installFromEnvironment(runtime);
         godhand::pcsampler::installFromEnvironment(runtime);

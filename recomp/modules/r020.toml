@@ -22,3 +22,24 @@ skip = []
 stubs = []
 # No runtime relocations: every import resolves to a boot .sndata export at static-link time
 # (r020_runtime_relocations.csv has 0 rows).
+
+# [Game] UnlockHard (GODHAND_UNLOCK_HARD): the difficulty select treats Hard as unlocked. The save's flag
+# (0x747A28 bit 0x200000, set by a clear) is only read here, never written, so a save is not changed by it.
+# Each 'and rX,rY,<0x200000>' on the flag becomes 'or rX,zero,<0x200000>':
+#   0x79B25C  the menu's item animation (locked Hard does not grow)
+#   0x79B374  the confirm (locked Hard buzzes)
+#   0x79B924  the item sprites (Hard or the locked plate)
+[[patches.conditional]]
+address = "0x0079B25C"
+value = "0x00061025"
+flag = "unlock_hard"
+
+[[patches.conditional]]
+address = "0x0079B374"
+value = "0x00031025"
+flag = "unlock_hard"
+
+[[patches.conditional]]
+address = "0x0079B924"
+value = "0x00041825"
+flag = "unlock_hard"

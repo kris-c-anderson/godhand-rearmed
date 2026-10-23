@@ -38,6 +38,7 @@ set(GODHAND_HOST_SOURCES
     godhand/call_trace.cpp
     godhand/movie_watchdog.cpp
     godhand/frame_patches.cpp
+    godhand/game_options.cpp
     godhand/widescreen.cpp
     godhand/hud_layout.cpp
     godhand/ini_file.cpp

@@ -203,6 +203,7 @@ namespace godhand::launcher
             Result result = Result::Quit;
             ImFont *font = nullptr;
             float unit = 1.0f; // UI scale: window height / 720
+            Texture2D logo{};  // resources/images/logo.png when present (not in the repository: the game's logo)
         };
 
         float fontSize(const State &state, float base) { return std::round(base * state.unit); }
@@ -235,9 +236,20 @@ namespace godhand::launcher
         void title(const State &state)
         {
             ImGui::Dummy(ImVec2(0.0f, fontSize(state, 70.0f)));
-            pushSize(state, 92.0f);
-            centeredText("G O D   H A N D", ImVec4(1.0f, 0.62f, 0.30f, 1.0f));
-            ImGui::PopFont();
+            if (state.logo.id != 0u && state.logo.height > 0)
+            {
+                const float width = std::min(ImGui::GetWindowWidth() * 0.8f, fontSize(state, 820.0f));
+                const float height = width * static_cast<float>(state.logo.height) / static_cast<float>(state.logo.width);
+                ImGui::SetCursorPosX((ImGui::GetWindowWidth() - width) * 0.5f);
+                rlImGuiImageSize(&state.logo, static_cast<int>(width), static_cast<int>(height));
+                ImGui::Dummy(ImVec2(0.0f, fontSize(state, 6.0f)));
+            }
+            else
+            {
+                pushSize(state, 92.0f);
+                centeredText("G O D   H A N D", ImVec4(1.0f, 0.62f, 0.30f, 1.0f));
+                ImGui::PopFont();
+            }
             pushSize(state, 22.0f);
             centeredText("Recompiled for PC", kTextDim);
             ImGui::PopFont();
@@ -529,6 +541,12 @@ namespace godhand::launcher
                                                        "twice as long (the dial runs half as fast), at 30 and 60 FPS.");
                         iniCombo(state, "##roulette", "Game", "RouletteTimer", "normal",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kRouletteTimers, value); });
+                        settingLabel("Unlock Hard", "Hard can be picked from the start instead of after a clear. Your "
+                                                    "save is not changed.");
+                        iniCheckbox(state, "On##hard", "Game", "UnlockHard", false);
+                        settingLabel("Mute music", "The game's music plays silent. Voices, sound effects and movies are "
+                                                   "unchanged.");
+                        iniCheckbox(state, "On##music", "Sound", "MuteMusic", false);
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();
@@ -604,6 +622,16 @@ namespace godhand::launcher
         if (fs::is_regular_file(fontPath, error))
             state.font = io.Fonts->AddFontFromFileTTF(utf8(fontPath).c_str(), 20.0f);
         applyStyle();
+        const fs::path logoPath = context.exeDir / "resources" / "images" / "logo.png";
+        if (fs::is_regular_file(logoPath, error))
+        {
+            state.logo = LoadTexture(utf8(logoPath).c_str());
+            if (state.logo.id != 0u)
+            {
+                GenTextureMipmaps(&state.logo);
+                SetTextureFilter(state.logo, TEXTURE_FILTER_TRILINEAR);
+            }
+        }
         GH_INFO(Boot, "launcher: shown (" << (state.installed ? "installed" : "not installed") << ")");
 
         while (!state.done)
@@ -642,6 +670,8 @@ namespace godhand::launcher
             EndDrawing();
         }
         state.ini.save();
+        if (state.logo.id != 0u)
+            UnloadTexture(state.logo);
         rlImGuiShutdown(); // the F12 debugger sets ImGui up again later
         // One empty frame, so the window does not keep showing the launcher until the game's first picture.
         BeginDrawing();
