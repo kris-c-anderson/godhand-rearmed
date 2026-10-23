@@ -117,6 +117,7 @@ private:
         uint64_t size = 0u;
         bool cdImage = false;
         uint64_t cdImageOffset = 0u;
+        bool discImageStream = false; // the disc image opened as a plain file (IOP sceCdRead): PS2DiscOverlay applies
     };
     mutable std::mutex m_hostFileMutex;
     std::unordered_map<uint64_t, HostFile> m_hostFiles;

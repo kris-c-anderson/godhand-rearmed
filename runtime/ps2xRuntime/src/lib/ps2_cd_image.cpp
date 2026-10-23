@@ -2,6 +2,7 @@
 #include "ps2_runtime.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstring>
 #include <iostream>
@@ -228,7 +229,51 @@ bool PS2CdImage::readUnlocked(uint64_t offset, void *destination, size_t size) c
     {
         return false;
     }
-    return size == 0 || std::fread(destination, 1u, size, m_file) == size;
+    if (size != 0 && std::fread(destination, 1u, size, m_file) != size)
+    {
+        return false;
+    }
+    PS2DiscOverlay::apply(offset, destination, size);
+    return true;
+}
+
+namespace
+{
+    std::vector<PS2DiscOverlay::Patch> g_overlay;
+    std::atomic<bool> g_overlayActive{false};
+}
+
+void PS2DiscOverlay::set(std::vector<Patch> patches)
+{
+    g_overlayActive.store(false);
+    g_overlay = std::move(patches);
+    g_overlayActive.store(!g_overlay.empty());
+}
+
+bool PS2DiscOverlay::active()
+{
+    return g_overlayActive.load(std::memory_order_acquire);
+}
+
+void PS2DiscOverlay::apply(uint64_t offset, void *destination, size_t size)
+{
+    if (!active() || !destination || size == 0)
+    {
+        return;
+    }
+    uint8_t *out = static_cast<uint8_t *>(destination);
+    const uint64_t end = offset + size;
+    for (const Patch &patch : g_overlay)
+    {
+        const uint64_t patchEnd = patch.first + patch.second.size();
+        if (patchEnd <= offset || patch.first >= end)
+        {
+            continue;
+        }
+        const uint64_t from = std::max(offset, patch.first);
+        const uint64_t to = std::min(end, patchEnd);
+        std::memcpy(out + (from - offset), patch.second.data() + (from - patch.first), static_cast<size_t>(to - from));
+    }
 }
 
 bool PS2CdImage::read(uint64_t offset, void *destination, size_t size) const

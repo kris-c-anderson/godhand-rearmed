@@ -8,6 +8,8 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 class PS2CdImage
 {
@@ -48,3 +50,18 @@ private:
     bool m_openAttempted = false;
     std::unordered_map<std::string, Entry> m_entries;
 };
+
+// Byte patches over the disc image, applied to every read of it (PS2CdImage, the EE sceCdRead stub, the IOP's image
+// reads). Set once before the game starts (file replacement mods: a replacement written over its own slot in an
+// archive, plus the archive's size fields); empty = the disc as it is.
+class PS2DiscOverlay
+{
+public:
+    using Patch = std::pair<uint64_t, std::vector<uint8_t>>; // image byte offset, bytes
+
+    static void set(std::vector<Patch> patches);
+    static bool active();
+    // Overlays the patches on [offset, offset + size) of the image, already read into destination.
+    static void apply(uint64_t offset, void *destination, size_t size);
+};
+

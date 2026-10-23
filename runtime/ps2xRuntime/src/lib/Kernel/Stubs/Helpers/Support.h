@@ -506,7 +506,10 @@ namespace
             }
 
             const uint64_t offset = static_cast<uint64_t>(lbn) * kCdSectorSize;
-            return readHostRange(cdImage, offset, dst, byteCount);
+            if (!readHostRange(cdImage, offset, dst, byteCount))
+                return false;
+            PS2DiscOverlay::apply(offset, dst, byteCount);
+            return true;
         }
 
         std::cerr << "sceCdRead unresolved LBN 0x" << std::hex << lbn

@@ -1,5 +1,6 @@
 #include "godhand/launcher.h"
 
+#include "godhand/character_mods.h"
 #include "godhand/game_disc.h"
 #include "godhand/ini_file.h"
 #include "godhand/launcher_platform.h"
@@ -547,6 +548,33 @@ namespace godhand::launcher
                         settingLabel("Mute music", "The game's music plays silent. Voices, sound effects and movies are "
                                                    "unchanged.");
                         iniCheckbox(state, "On##music", "Sound", "MuteMusic", false);
+                        ImGui::EndTable();
+                    }
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Mods"))
+                {
+                    if (beginSettings("mods"))
+                    {
+                        settingLabel("Character", "Who you play as. Other characters use Gene's moves and his God Hand "
+                                                  "arm.");
+                        static std::vector<characters::Character> list;
+                        if (list.empty())
+                            list = characters::list(state.context->exeDir);
+                        const std::string current = lower(state.ini.get("Mods", "Character", "gene"));
+                        int picked = 0;
+                        std::vector<const char *> names;
+                        for (size_t i = 0; i < list.size(); ++i)
+                        {
+                            names.push_back(list[i].name.c_str());
+                            if (lower(list[i].id) == current)
+                                picked = static_cast<int>(i);
+                        }
+                        ImGui::SetNextItemWidth(-1.0f);
+                        if (ImGui::Combo("##character", &picked, names.data(), static_cast<int>(names.size())))
+                            state.ini.set("Mods", "Character", list[static_cast<size_t>(picked)].id);
+                        if (!list[static_cast<size_t>(picked)].credit.empty())
+                            ImGui::TextColored(kTextDim, "%s", list[static_cast<size_t>(picked)].credit.c_str());
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();

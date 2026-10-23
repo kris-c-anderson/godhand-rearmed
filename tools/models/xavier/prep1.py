@@ -1,0 +1,188 @@
+import os
+WORK=os.environ.get('XAVIER_WORK','xavier_work')
+# Blender: Xavier -> Gene skeleton (rest pose), right arm removed. Saves <work>/xavier_stage1.blend
+import bpy, bmesh, sys, math
+import numpy as np
+from mathutils import Vector, Matrix
+sys.path.insert(0,os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0,os.path.join(os.path.dirname(os.path.abspath(__file__)),'..'))
+from ghmodel import *
+
+GENE=os.environ['GENE_PL00']  # the game's pl/pl00.dat (tools/disc_extract.py)
+XAV=os.environ['XAVIER_BLEND']  # Xavier_v1_1_1-README.blend
+
+# Gene joints, Blender coords (x, -z, y)
+b=open(GENE,'rb').read(); md=[d for t,d,o in dat_read(b) if t=='MD'][0]
+kind,nodes=scr_read(md); m0=mdb_read(md,nodes[0]['mdb_off'])
+GW=[]
+for bn in m0['bones']:
+    p=bn['parent']; base=GW[p] if p>=0 else np.zeros(3)
+    GW.append(base+np.array(bn['t']))
+G=[np.array((w[0],-w[2],w[1])) for w in GW]
+
+bpy.ops.wm.open_mainfile(filepath=XAV)
+arm=bpy.data.objects['kish_080225']
+arm.data.pose_position='REST'
+names=['XavierBody','XavierHair','XavierNecklace','XavierShoulderPad','Xaviersnakeeyes','XavierEyeR','XavierEyesL']
+Rarm=['def_arm_0.R','def_arm_1.R','def_arm_1_bridge.R','def_arm_1_elbow_dc_0.R','def_hand_0.R']+['def_finger_%d_%d'%(i,j) for i in range(5) for j in range(3)]
+
+def bonepos(n):
+    bn=arm.data.bones[n]; mw=arm.matrix_world
+    return np.array(mw@bn.head_local), np.array(mw@bn.tail_local)
+
+# ---------------- transforms
+def frame_from(d):
+    d=d/np.linalg.norm(d)
+    a=np.array((0,0,1.0)) if abs(d[2])<0.9 else np.array((1.0,0,0))
+    u=np.cross(d,a); u/=np.linalg.norm(u); v=np.cross(d,u)
+    return np.stack([d,u,v],1)  # columns
+
+def rot_between(a,b):
+    a=a/np.linalg.norm(a); b=b/np.linalg.norm(b)
+    v=np.cross(a,b); c=float(np.dot(a,b))
+    if np.linalg.norm(v)<1e-9: return np.eye(3)
+    vx=np.array([[0,-v[2],v[1]],[v[2],0,-v[0]],[-v[1],v[0],0]])
+    return np.eye(3)+vx+vx@vx*(1/(1+c))
+
+def seg_xform(xh,xt,gh,gt,kperp):
+    dx=xt-xh; dg=gt-gh
+    R=rot_between(dx,dg)
+    F=frame_from(dx)
+    S=F@np.diag([np.linalg.norm(dg)/np.linalg.norm(dx),kperp,kperp])@F.T
+    A=R@S
+    M=np.eye(4); M[:3,:3]=A; M[:3,3]=gh-A@xh
+    return M
+
+def uni_xform(xp,gp,k,R=np.eye(3)):
+    M=np.eye(4); M[:3,:3]=R*k; M[:3,3]=gp-(R*k)@xp; return M
+
+body=bpy.data.objects['XavierBody']
+bw=body.matrix_world
+vz=[ (bw@v.co).z for v in body.data.vertices]
+xtop=max(vz)
+GENE_TOP=1.837
+XHIP=np.array((0,-0.01,0.931)); GHIP=np.array((0,0,1.01))
+k=(GENE_TOP-GHIP[2])/(xtop-XHIP[2])
+print('XTOP',xtop,'k',k)
+T0=uni_xform(XHIP,GHIP,k)
+
+X=lambda n: bonepos(n)
+xf={}
+# legs
+for s,g0 in (('L',22),('R',18)):
+    hip=X('def_leg_0.'+s)[0]; knee=(X('def_leg_0.'+s)[1]+X('def_leg_1.'+s)[0])/2
+    ank=X('def_foot_0.'+s)[0]
+    gh=G[g0]; gk=G[g0+1]; ga=np.array((G[g0+2][0],G[g0+2][1],ank[2]*k))
+    xf['thigh'+s]=seg_xform(hip,knee,gh,gk,k)
+    xf['shin'+s]=seg_xform(knee,ank,gk,ga,k)
+    xf['foot'+s]=uni_xform(ank,ga,k)
+# left (snake) arm
+sh=X('def_arm_0.L')[0]; el=X('def_snake_0')[0]; st=X('def_snake_0')[1]
+gs=G[13]; ge=G[14]; gdir=(G[16]-G[14])/np.linalg.norm(G[16]-G[14])
+FORE=float(np.linalg.norm(st-el))*k
+xf['uparmL']=seg_xform(sh,el,gs,ge,k)
+xf['foreL']=seg_xform(el,st,ge,ge+gdir*FORE,k)
+Rf=rot_between(st-el, gdir)
+xf['snakehead']=uni_xform(st,ge+gdir*FORE,k,Rf)
+# right upper arm (shoulder pad)
+shR=X('def_arm_0.R')[0]; elR=X('def_arm_1.R')[0]
+xf['uparmR']=seg_xform(shR,elR,G[7],G[8],k)
+xf['T0']=T0
+
+def group_xform(n):
+    if n.startswith('def_leg_0.'): return 'thigh'+n[-1]
+    if n.startswith('def_leg_1'): return 'shin'+n[-1]
+    if n.startswith('def_foot_0.') or n.startswith('def_toe_0.'): return 'foot'+n[-1]
+    if n in ('def_arm_0.L',): return 'uparmL'
+    if n in ('def_arm_1_bridge.L','def_arm_1_elbow_dc_0.L','def_snake_0'): return 'foreL'
+    if n.startswith('def_snake'): return 'snakehead'
+    if n in ('def_arm_0.R','def_arm_1.R','def_arm_1_bridge.R','def_arm_1_elbow_dc_0.R'): return 'uparmR'
+    return 'T0'
+
+# Gene bone for each Xavier deform group
+def gene_bone(n, pos=None):
+    if n in ('def_pelvis_0','def_loincloth_front','def_loincloth_back') or n.startswith('def_butt'): return 17
+    if n.startswith('def_waist') or n in ('def_spine_0','def_spine_1'): return 1
+    if n=='def_chest_0': return 2
+    if n=='def_neck_0': return 3
+    if n=='def_shoulder_0.L': return 11
+    if n=='def_shoulder_0.R': return 5
+    if n=='def_arm_0.L': return 13
+    if n in ('def_arm_1_bridge.L','def_arm_1_elbow_dc_0.L'): return 14
+    if n=='def_snake_0': return 'snake0'
+    if n.startswith('def_snake'): return 16
+    if n=='def_arm_0.R': return 7
+    if n in ('def_arm_1.R','def_arm_1_bridge.R','def_arm_1_elbow_dc_0.R'): return 8
+    for s,g0 in (('L',22),('R',18)):
+        if n=='def_leg_0.'+s: return g0
+        if n.startswith('def_leg_1') and n.endswith('.'+s): return g0+1
+        if n=='def_foot_0.'+s: return g0+2
+        if n=='def_toe_0.'+s: return g0+3
+    return 4  # head, face, hair, eyes, mouth
+
+deform=set(bn.name for bn in arm.data.bones if bn.use_deform)
+snake_h,snake_t=X('def_snake_0')
+
+out_objs=[]
+for name in names:
+    ob=bpy.data.objects[name]
+    me=ob.data.copy(); mw=ob.matrix_world.copy()
+    nv=len(me.vertices)
+    co=np.array([tuple(v.co) for v in me.vertices])
+    sk=ob.data.shape_keys
+    if sk:
+        basis=np.array([tuple(x.co) for x in sk.reference_key.data])
+        co=basis.copy()
+        for kb in sk.key_blocks[1:]:
+            if kb.value and not kb.mute:
+                co+=kb.value*(np.array([tuple(x.co) for x in kb.data])-np.array([tuple(x.co) for x in kb.relative_key.data]))
+    P=np.array([tuple(mw@Vector(c)) for c in co])
+    gname={g.index:g.name for g in ob.vertex_groups}
+    newP=np.zeros_like(P); gw=[dict() for _ in range(nv)]; rsum=np.zeros(nv)
+    for i,v in enumerate(me.vertices):
+        ws=[(gname[g.group],g.weight) for g in v.groups if gname.get(g.group) in deform and g.weight>0]
+        tot=sum(w for _,w in ws)
+        if tot<=0: ws=[('def_head_0',1.0)]; tot=1.0
+        acc=np.zeros(3); p4=np.append(P[i],1)
+        for n,w in ws:
+            w/=tot
+            acc+=w*(xf[group_xform(n)]@p4)[:3]
+            gb=gene_bone(n)
+            if gb=='snake0':
+                d=snake_t-snake_h; t=np.clip(np.dot(P[i]-snake_h,d)/np.dot(d,d),0,1)
+                t2=np.clip((t-0.3)/0.6,0,1)
+                gw[i][14]=gw[i].get(14,0)+w*(1-t2); gw[i][15]=gw[i].get(15,0)+w*t2
+            else:
+                gw[i][gb]=gw[i].get(gb,0)+w
+            if n in Rarm: rsum[i]+=w
+        newP[i]=acc
+    new=bpy.data.objects.new('X_'+name, me)
+    bpy.context.scene.collection.objects.link(new)
+    if new.data.shape_keys: new.shape_key_clear()
+    for vi,v in enumerate(me.vertices): v.co=Vector(newP[vi])
+    new.vertex_groups.clear()
+    for gi in range(32): new.vertex_groups.new(name=str(gi))
+    for vi,d in enumerate(gw):
+        for gb,w in d.items():
+            if w>0.001: new.vertex_groups[gb].add([vi],w,'REPLACE')
+    me['rsum']=0
+    # delete right arm & mouth interior
+    bm=bmesh.new(); bm.from_mesh(me); bm.verts.ensure_lookup_table()
+    kill=[]
+    if name=='XavierBody':
+        mouth=[i for i,s in enumerate(ob.material_slots) if s.material and s.material.name=='mouth']
+        killf=[f for f in bm.faces if f.material_index in mouth]
+        bmesh.ops.delete(bm,geom=killf,context='FACES')
+        bm.verts.ensure_lookup_table()
+        killv=[bm.verts[i] for i in range(len(bm.verts)) if rsum[bm.verts[i].index]>=0.5]
+        bmesh.ops.delete(bm,geom=killv,context='VERTS')
+        loose=[v for v in bm.verts if not v.link_faces]
+        bmesh.ops.delete(bm,geom=loose,context='VERTS')
+    bm.to_mesh(me); bm.free()
+    out_objs.append(new)
+    print('OBJ',name,'verts',len(me.vertices),'faces',len(me.polygons))
+
+# drop the original Xavier objects/rig from the scene
+for o in list(bpy.data.objects):
+    if o not in out_objs: bpy.data.objects.remove(o)
+np.save(WORK+'/gene_joints.npy',np.array(G))
+bpy.ops.wm.save_as_mainfile(filepath=WORK+'/xavier_stage1.blend')

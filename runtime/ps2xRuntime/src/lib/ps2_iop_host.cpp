@@ -369,13 +369,19 @@ uint64_t PS2IopHostAdapter::openHostFile(std::string_view path)
         return 0u;
     }
 
+    HostFile opened{stream, size};
+    {
+        const std::filesystem::path &image = PS2Runtime::getIoPaths().cdImage;
+        std::error_code sameError;
+        opened.discImageStream = !image.empty() && std::filesystem::equivalent(hostPath, image, sameError) && !sameError;
+    }
     std::lock_guard<std::mutex> lock(m_hostFileMutex);
     uint64_t handle = m_nextHostFileHandle++;
     if (handle == 0u)
     {
         handle = m_nextHostFileHandle++;
     }
-    m_hostFiles.emplace(handle, HostFile{stream, size});
+    m_hostFiles.emplace(handle, opened);
     return handle;
 }
 
@@ -441,6 +447,8 @@ bool PS2IopHostAdapter::readHostFile(uint64_t handle,
         std::clearerr(it->second.stream);
         return false;
     }
+    if (it->second.discImageStream)
+        PS2DiscOverlay::apply(offset, destination, bytesRead);
     return true;
 }
 

@@ -9,6 +9,8 @@
     python -I build.py configure [-DOPTION=...]       CMake configure (Ninja, RelWithDebInfo, no LTCG)
     python -I build.py build [target]                 compile godhand.exe (configures first if needed)
     python -I build.py all [--iso X]                  generate -> configure -> build
+    python -I build.py characters [--iso X] [id ...]  playable characters (assets/characters) built from your disc
+                                                      into build/port/bin/mods/characters
     python -I build.py boot [--seconds N] [--iso X]   one hidden, time-capped run; output in build/port/bin/logs
     python -I build.py run [args]                     a normal run in a window (arguments go to godhand.exe)
     python -I build.py status                         what exists so far
@@ -830,8 +832,24 @@ def vu(args=()):
     return 0
 
 
+def characters(args=()):
+    args = list(args)
+    iso_arg = None
+    if "--iso" in args and args.index("--iso") + 1 < len(args):
+        i = args.index("--iso"); iso_arg = args[i + 1]; del args[i:i + 2]
+    iso = find_iso(iso_arg)
+    if not iso:
+        print("No disc image found. Put your own God Hand (USA) image in game/, set GODHAND_ISO or pass --iso.")
+        return 1
+    sys.path.insert(0, str(ROOT / "tools" / "models"))
+    import build_characters
+    BIN.mkdir(parents=True, exist_ok=True)
+    return build_characters.build(str(iso), str(BIN), tuple(args))
+
+
 COMMANDS = {
     "generate": generate,
+    "characters": characters,
     "vu": vu,
     "modules": modules,
     "configure": lambda a: configure(a),

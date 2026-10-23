@@ -28,6 +28,7 @@
 #include "godhand/movie_watchdog.h"
 #include "godhand/frame_patches.h"
 #include "godhand/game_options.h"
+#include "godhand/character_mods.h"
 #include "godhand/widescreen.h"
 #if GODHAND_HAS_LAUNCHER
 #include "godhand/launcher.h"
@@ -357,6 +358,7 @@ namespace
         {"game", "roulettetimer", "GODHAND_ROULETTE_TIMER"},
         {"game", "unlockhard", "GODHAND_UNLOCK_HARD"},
         {"sound", "mutemusic", "GODHAND_MUTE_MUSIC"},
+        {"mods", "character", "GODHAND_CHARACTER"},
         {"run", "headless", "GODHAND_HEADLESS"},
         {"run", "timelimitseconds", "GODHAND_TIME_LIMIT_SECONDS"},
         {"run", "dumpontimelimit", "GODHAND_DUMP_ON_TIME_LIMIT"},
@@ -877,6 +879,7 @@ int main(int argc, char *argv[])
         if (ps2x::pnach::loadFromEnvironment() != 0u)
             ps2x::pnach::applyOnce(runtime.memory().getRDRAM());
         PS2Runtime::setIoPaths(paths);
+        godhand::characters::install(exeDir); // [Mods] Character: a replacement model for Gene
 
         runtime.setMissingFunctionPolicy(missingFunctionPolicy());
         GH_INFO(Boot, "missing-function policy: " << (std::getenv("GODHAND_MISSING_FUNCTION") ? std::getenv("GODHAND_MISSING_FUNCTION") : "stop")
