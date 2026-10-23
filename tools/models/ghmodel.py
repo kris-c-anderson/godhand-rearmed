@@ -5,7 +5,7 @@ Layouts from anasrar/chihuahua (pkg/*/*.hexpat) and akitotheanimator/God-Hand-To
 pl/pl00.dat: a dat is (u32 count, u32 offsets[count], char type[4][count]), entries 32-byte aligned; an MD is
 "scr\0", kind 3, node count, node offsets, then per node an "mdb\0" block (bone table copy + vertex buffers) and
 112-byte node records. A vertex buffer holds triangle strips: position + flag (0x8000 = restart, 0/1 = winding),
-int8 normals, int16 UVs (4096 = 1.0, v negative), RGBA colour (0x80 = 1.0) and three bone weights (index*4, percent).
+int8 normals, int16 UVs (4096 = 1.0; v = -4096 * (1 - t), t counted from the top row, so -4096 is the top and 0 the bottom), RGBA colour (0x80 = 1.0) and three bone weights (index*4, percent).
 """
 import struct
 

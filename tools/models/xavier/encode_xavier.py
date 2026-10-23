@@ -161,7 +161,8 @@ for mat in plan:
         t=[]
         for c in f['c']:
             tx,ty=uvf[mat](*c['uv'])
-            u=int(round(tx*4096)); v=int(round(-ty*4096))
+            # v counts from the bottom of the texture: v = -4096 at the top row, 0 at the bottom (checked on Gene)
+            u=int(round(tx*4096)); v=int(round(-(1-ty)*4096))
             k=(tuple(c['key']),u,v)
             if k not in ids:
                 ids[k]=len(verts)
