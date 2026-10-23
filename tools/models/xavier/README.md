@@ -10,7 +10,9 @@ pillow`), numpy and Pillow:
    mapped to Gene's 32 bones.
 2. `prep2.py`: decimated to Gene's budget, the body atlas split into UV-island groups (fur by colour, the rest by place);
    the two loincloth panels are their own group.
-3. `encode_xavier.py`: 4-bit, 16-colour TIM3 textures and triangle-strip vertex buffers, written as
+3. `encode_xavier.py`: 4-bit, 16-colour TIM3 textures in exactly the game's slots (same names, sizes and order as
+   Gene's: the game's texture layout assumes them; the face is stored turned 90 degrees, both eyes share pl0008) and
+   triangle-strip vertex buffers, written as
    `xavier_nodes.scr` (an MD with an empty bone table), `xavier_coat.scr` (the loincloth panels, weighted to the front
    and back bone chains of Gene's coat tails in pl/pl01.dat, so the game's cloth motion swings them) and
    `xavier_textures.tm3`. The shoulder pad is enlarged (x1.3 around the upper arm) to cover the God Hand arm's shoulder.

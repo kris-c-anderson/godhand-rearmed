@@ -25,6 +25,7 @@
 // next frame (0x30ADD8..0x30ADF0), where the pnach's stick hook ran; the per-vblank writes run there too, once per
 // game frame.
 #include "godhand/frame_patches.h"
+#include "godhand/character_mods.h"
 #include "godhand/hud_layout.h"
 #include "godhand/call_profile.h"
 #include "godhand/counter_finder.h"
@@ -239,6 +240,7 @@ namespace godhand
             profileWindow();
             counterfinder::onFrame(rdram);
             hud::onFrame(rdram);
+            characters::onFrame(rdram);
             if (!g_fps60)
             {
                 restoreInjected(rdram);
@@ -375,6 +377,7 @@ namespace godhand
         g_fps60 = envOn("GODHAND_FPS60");
         g_l3Dash = envOn("GODHAND_L3_DASH");
         ps2xRegisterHostHook("gh_frame_start", &frameStart);
+        characters::installProbe();
         ps2xRegisterHostHook("gh_fps60_hitbox_compare", &hitboxCompare);
         ps2xRegisterHostHook("gh_fps60_roulette_timer", &rouletteTimer);
         ps2xRegisterHostHook("gh_fps60_roulette_dial", &rouletteDial);

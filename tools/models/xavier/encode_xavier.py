@@ -19,14 +19,23 @@ print(cnt)
 fur='body0'
 others=sorted([m for m in cnt if m.startswith('body') and m!=fur], key=lambda m:-cnt[m])
 print('others',others)
-# material -> (tm3 index, name, source image, texels per source pixel, max size, alpha)
-plan={'head':(0,'pl0000','XavierFace.png',0.25,256,False), fur:(1,'pl0001','XavierDiffuse.png',0.125,256,False),
-      'hair':(7,'pl0007','Xavier_HAIR.png',0.2,128,True),'eyeR':(8,'pl0008','Eye_BLUE.png',0.0625,64,False),
-      'eyeL':(9,'pl0009','Eye_BROWN.png',0.0625,64,False),'snakeeye':(13,'pl0013','Xavier_SNAKEEYE.png',0.1,64,False)}
-assert len(others)<=2
-plan['loin']=(3,'pl0003','XavierDiffuse.png',0.3,128,False)
-for m,(idx,nm) in zip(others,((2,'pl0002'),(6,'pl0006'))):
-    plan[m]=(idx,nm,'XavierDiffuse.png',0.25,256,False)
+# The texture slots keep the game's own sizes and order (pl0000..pl0010, pl0004a, pl0005a): Xavier's art in Gene's
+# shapes. Each slot: (tm3 index, name, width, height, alpha, [(material, source image, rotate 90, sub-rect x0,y0,x1,y1)])
+def green(m):
+    fl=[f for f in faces if f['mat']==m]; A=np.asarray(Image.open(os.path.join(TEX,'XavierDiffuse.png')).convert('RGB')).astype(float)
+    H,W=A.shape[:2]; c=np.array([A[min(H-1,int((1-cc['uv'][1])*H)),min(W-1,int(cc['uv'][0]*W))] for f in fl for cc in f['c']])
+    return (c[:,1]-(c[:,0]+c[:,2])/2).mean()
+assert len(others)==2
+snake,shoes=sorted(others,key=green,reverse=True)
+SLOTS=[(0,'pl0000',128,256,False,[('head','XavierFace.png',True,(0,0,1,1))]),
+       (1,'pl0001',256,512,False,[(fur,'XavierDiffuse.png',False,(0,0,1,1))]),
+       (2,'pl0002',128,256,False,[(snake,'XavierDiffuse.png',False,(0,0,1,1))]),
+       (3,'pl0003',128,128,False,[('loin','XavierDiffuse.png',False,(0,0,1,1))]),
+       (6,'pl0006',64,64,False,[(shoes,'XavierDiffuse.png',False,(0,0,1,1))]),
+       (7,'pl0007',128,128,True,[('hair','Xavier_HAIR.png',False,(0,0,1,1))]),
+       (8,'pl0008',64,32,False,[('eyeR','Eye_BLUE.png',False,(0,0,0.5,1)),('eyeL','Eye_BROWN.png',False,(0.5,0,1,1))]),
+       (9,'pl0009',64,32,False,[('snakeeye','Xavier_SNAKEEYE.png',True,(0,0,1,1))])]
+plan={m[0]:sl[0] for sl in SLOTS for m in sl[5]}
 node_of={'head':'HD_00','eyeR':'HD_00','eyeL':'HD_00','hair':'z_00','loin':'COAT'}
 
 def p2(x,lo,hi):
@@ -53,25 +62,30 @@ def raster_mask(shape, tris_px):
     for t in tris_px: d.polygon([tuple(p) for p in t],fill=255)
     return np.asarray(m)>0
 
-textures={}; uvmap={}
-for mat,(idx,nm,src,dens,mx,alpha) in plan.items():
-    fl=[f for f in faces if f['mat']==mat]
-    if not fl: print('no faces for',mat); continue
-    im=Image.open(os.path.join(TEX,src)).convert('RGBA'); W,H=im.size
-    px=np.array([[c['uv'][0]*W,(1-c['uv'][1])*H] for f in fl for c in f['c']])
-    x0,y0=np.floor(px.min(0))-2; x1,y1=np.ceil(px.max(0))+2
-    x0=max(0,x0); y0=max(0,y0); x1=min(W,x1); y1=min(H,y1)
-    cw,ch=x1-x0,y1-y0
-    tw=p2(cw*dens,32 if not alpha else 64,mx); th=p2(ch*dens,32,mx)
-    if tw<64: tw=64
-    if mat=='head' or mat in others: th=min(th,128)
-    if mat in others and th==128: tw=min(tw,128 if cw<ch*1.5 else 256)
-    crop=im.crop((int(x0),int(y0),int(x1),int(y1))).resize((tw,th),Image.LANCZOS)
-    arr=np.asarray(crop)
-    # palette from the pixels the faces use
-    sx=tw/cw; sy=th/ch
-    tris=[[((c['uv'][0]*W-x0)*sx,((1-c['uv'][1])*H-y0)*sy) for c in f['c']] for f in fl]
-    mask=raster_mask(arr.shape,tris)
+textures={}; uvf={}
+for idx,nm,TW,TH,alpha,parts in SLOTS:
+    canvas=np.zeros((TH,TW,4),np.uint8); mask=np.zeros((TH,TW),bool)
+    for mat,src,rot,(sx0,sy0,sx1,sy1) in parts:
+        fl=[f for f in faces if f['mat']==mat]
+        if not fl: print('no faces for',mat); continue
+        im=Image.open(os.path.join(TEX,src)).convert('RGBA'); W,H=im.size
+        px=np.array([[c['uv'][0]*W,(1-c['uv'][1])*H] for f in fl for c in f['c']])
+        x0,y0=np.floor(px.min(0))-2; x1,y1=np.ceil(px.max(0))+2
+        x0=max(0,x0); y0=max(0,y0); x1=min(W,x1); y1=min(H,y1)
+        cw,ch=x1-x0,y1-y0
+        rx0,ry0=int(round(sx0*TW)),int(round(sy0*TH)); rw,rh=int(round(sx1*TW))-rx0,int(round(sy1*TH))-ry0
+        crop=im.crop((int(x0),int(y0),int(x1),int(y1)))
+        if rot: crop=crop.transpose(Image.Transpose.ROTATE_90)
+        canvas[ry0:ry0+rh,rx0:rx0+rw]=np.asarray(crop.resize((rw,rh),Image.LANCZOS))
+        def f_(u,v,W=W,H=H,x0=x0,y0=y0,cw=cw,ch=ch,rot=rot,rx0=rx0,ry0=ry0,rw=rw,rh=rh,TW=TW,TH=TH):
+            tx=(u*W-x0)/cw; ty=((1-v)*H-y0)/ch
+            if rot: tx,ty=ty,1-tx   # PIL ROTATE_90 (counter-clockwise): (x,y) -> (y, 1-x)
+            return (rx0+tx*rw)/TW, (ry0+ty*rh)/TH
+        uvf[mat]=f_
+        tris=[[(f_(*c['uv'])[0]*TW, f_(*c['uv'])[1]*TH) for c in f['c']] for f in fl]
+        mask|=raster_mask((TH,TW),tris)
+        print('TEX',mat,'->',idx,nm,TW,'x',TH,'part',rw,'x',rh,'from',int(cw),'x',int(ch),'rot' if rot else '')
+    arr=canvas
     sel=arr[mask] if mask.sum()>32 else arr.reshape(-1,4)
     if alpha:
         q=Image.fromarray(sel.reshape(1,-1,4),'RGBA').quantize(16,method=Image.Quantize.FASTOCTREE)
@@ -81,15 +95,11 @@ for mat,(idx,nm,src,dens,mx,alpha) in plan.items():
         pal3=np.array(q.getpalette()[:48],np.uint8).reshape(-1,3); pal=np.hstack([pal3,np.full((len(pal3),1),255,np.uint8)])
     while len(pal)<16: pal=np.vstack([pal,pal[-1:]])
     pal=pal[:16]
-    # map every pixel to the nearest palette entry (alpha-aware)
     d=((arr[:,:,None,:].astype(int)-pal[None,None,:,:].astype(int))**2)
     if not alpha: d=d[...,:3]
     ind=np.argmin(d.sum(-1),-1)
-    preview=pal[ind]
-    Image.fromarray(preview.astype(np.uint8),'RGBA').save(OUT+'/tex_%s.png'%nm)
-    textures[idx]=(nm,tim3_encode(ind,pal,tw,th))
-    uvmap[mat]=(W,H,x0,y0,cw,ch)
-    print('TEX',mat,'->',idx,nm,tw,'x',th,'from',int(cw),'x',int(ch))
+    Image.fromarray(pal[ind].astype(np.uint8),'RGBA').save(OUT+'/tex_%s.png'%nm)
+    textures[idx]=(nm,tim3_encode(ind,pal,TW,TH))
 
 def game(v): return (v[0],v[2],-v[1])
 
@@ -119,15 +129,15 @@ def coat_weights(p):
 
 nodes={}
 for mat in plan:
-    if mat not in uvmap: continue
-    W,H,x0,y0,cw,ch=uvmap[mat]; idx=plan[mat][0]
+    if mat not in uvf: continue
+    idx=plan[mat]
     node=node_of.get(mat,'cort')
     fl=[f for f in faces if f['mat']==mat]
     ids={}; verts=[]; tris=[]
     for f in fl:
         t=[]
         for c in f['c']:
-            tx=(c['uv'][0]*W-x0)/cw; ty=((1-c['uv'][1])*H-y0)/ch
+            tx,ty=uvf[mat](*c['uv'])
             u=int(round(tx*4096)); v=int(round(-ty*4096))
             k=(tuple(c['key']),u,v)
             if k not in ids:

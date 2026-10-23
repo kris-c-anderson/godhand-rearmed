@@ -9,6 +9,8 @@
 #include "godhand/ini_file.h"
 #include "godhand/log.h"
 #include "runtime/ps2_cd_image.h"
+#include "ps2_runtime.h"
+#include "ps2_runtime_macros.h"
 
 #include <algorithm>
 #include <cctype>
@@ -18,6 +20,7 @@
 #include <fstream>
 #include <functional>
 #include <map>
+#include <sstream>
 
 namespace fs = std::filesystem;
 
@@ -191,5 +194,79 @@ namespace godhand::characters
         }
         PS2DiscOverlay::set(std::move(patches));
         GH_INFO(Boot, "playing as " << describe(folder).name << " (" << replaced << " files)");
+    }
+
+    namespace
+    {
+        uint32_t g_player = 0, g_coat = 0;
+        int g_probeFrames = -1;
+
+        uint32_t r32(uint8_t *rdram, uint32_t a)
+        {
+            uint32_t v = 0;
+            std::memcpy(&v, rdram + (a & (PS2_RAM_SIZE - 4u)), 4);
+            return v;
+        }
+
+        float rf(uint8_t *rdram, uint32_t a)
+        {
+            float v = 0;
+            std::memcpy(&v, rdram + (a & (PS2_RAM_SIZE - 4u)), 4);
+            return v;
+        }
+
+        void logBone(uint8_t *rdram, const char *who, uint32_t obj, uint32_t index)
+        {
+            const uint32_t count = rdram[(obj + 0x2B4u) & (PS2_RAM_SIZE - 1u)];
+            if (index >= count)
+                return;
+            const uint32_t bone = r32(rdram, r32(rdram, obj + 0x278u) + 4u * index);
+            if (bone == 0)
+                return;
+            std::ostringstream out;
+            out << "[cloth] " << who << " bone " << index << " @0x" << std::hex << bone << " parent 0x" << r32(rdram, bone + 0x148u)
+                << " flags 0x" << r32(rdram, bone + 0x154u) << std::dec;
+            for (uint32_t base : {0x80u, 0x40u, 0x00u})
+            {
+                out << " | +0x" << std::hex << base << std::dec << ":";
+                for (uint32_t i = 0; i < 16; ++i)
+                    out << ' ' << rf(rdram, bone + base + 4u * i);
+            }
+            out << " | +0x100: " << rf(rdram, bone + 0x100u) << ' ' << rf(rdram, bone + 0x104u) << ' ' << rf(rdram, bone + 0x108u)
+                << " | +0x130: " << rf(rdram, bone + 0x130u) << ' ' << rf(rdram, bone + 0x134u) << ' ' << rf(rdram, bone + 0x138u);
+            GH_INFO(Game, out.str());
+        }
+
+        // Before the instruction at 0x108088 (after SetParent(coat, player, 17)); s1 = the player.
+        void coatProbe(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            g_player = GPR_U32(ctx, 17);
+            g_coat = r32(rdram, g_player + 0x68Cu);
+            g_probeFrames = 0;
+            GH_INFO(Game, "[cloth] player 0x" << std::hex << g_player << " coat 0x" << g_coat << std::dec << " (bones "
+                                              << int(rdram[(g_player + 0x2B4u) & (PS2_RAM_SIZE - 1u)]) << " / "
+                                              << int(rdram[(g_coat + 0x2B4u) & (PS2_RAM_SIZE - 1u)]) << ")");
+        }
+    }
+
+    void installProbe()
+    {
+        ps2xRegisterHostHook("gh_coat_probe", &coatProbe);
+    }
+
+    void onFrame(uint8_t *rdram)
+    {
+        if (g_probeFrames < 0 || g_coat == 0)
+            return;
+        ++g_probeFrames;
+        if (g_probeFrames != 90 && g_probeFrames != 900)
+            return;
+        GH_INFO(Game, "[cloth] frame " << g_probeFrames << " after the coat was attached");
+        for (uint32_t b : {0u, 4u, 17u})
+            logBone(rdram, "player", g_player, b);
+        for (uint32_t b : {0u, 1u, 2u})
+            logBone(rdram, "coat", g_coat, b);
+        if (g_probeFrames == 900)
+            g_probeFrames = -1;
     }
 }

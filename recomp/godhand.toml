@@ -157,6 +157,13 @@ address = "0x00373FF0"
 hook = "gh_mute_music_volume"
 flag = "mute_music"
 
+# Cloth diagnostics: after the player's init attaches Gene's coat (SetParent(coat, player, 17) at 0x108068), before
+# lui a2,0x3C at 0x108088 (src/godhand/character_mods.cpp, [cloth] log lines).
+[[patches.hooks]]
+address = "0x00108088"
+hook = "gh_coat_probe"
+flag = "frame_hook"
+
 # Roulette TIME dial (cCockRoulette move, addiu v0,v0,-1 on +0x4D0, 95 frames): counts with the timer above.
 [[patches.hooks]]
 address = "0x0014530C"
