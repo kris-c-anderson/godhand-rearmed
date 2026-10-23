@@ -1,4 +1,5 @@
 #include "godhand/pc_sampler.h"
+#include "godhand/guest_symbols.h"
 #include "godhand/log.h"
 #include "ps2_runtime.h"
 
@@ -186,9 +187,9 @@ namespace godhand::pcsampler
                 const auto top = sorted(functions);
                 std::ostringstream line;
                 line << "[pc-sample] " << samples << " samples of the main game thread (" << none << " before its first frame); hottest pc 0x" << std::hex
-                     << topPc << std::dec << " " << (100.0 * topPcCount / std::max(1u, samples)) << "%:";
+                     << topPc << std::dec << " (" << symbols::describe(topPc) << ") " << (100.0 * topPcCount / std::max(1u, samples)) << "%:";
                 for (size_t i = 0; i < top.size() && i < 25u; ++i)
-                    line << " 0x" << std::hex << top[i].first << std::dec << "=" << (1000 * top[i].second / std::max(1u, samples)) / 10.0 << "%";
+                    line << " " << symbols::describe(top[i].first) << "=" << (1000 * top[i].second / std::max(1u, samples)) / 10.0 << "%";
                 GH_INFO(Game, line.str());
 #if defined(_WIN32)
                 if (!hostRips.empty())

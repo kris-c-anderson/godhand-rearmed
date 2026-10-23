@@ -1,6 +1,49 @@
 # Changelog
 
-Newest first. Each fix is commented in the code where it was made.
+Newest first. Each change is commented in the code where it was made.
+
+## October 23, 2026
+
+- **The project is God Hand: Rearmed**, on its own `main` branch; the launcher and window carry the name, and the
+  launcher draws `resources/images/logo.png` when it is there.
+- **Function names from the decomp:** `recomp/godhand_functions.csv` carries the decomp's names (4,255 of the 10,553
+  functions; `tools/symbols/import_decomp_names.py` refreshes them), the generated code is named after them, and the
+  crash log, the hang dump, the PC sampler and the call profiler print `cPlCamera_update+0x1c` instead of an address.
+- **Post effects option** (Graphics): the game's blur and heat-haze passes at the PS2's resolution (PCSX2's fix, grainy
+  at 3x and up) or upscaled.
+- **Xavier:** the arm stump is capped, Gene's God Hand arm is clipped exactly where it enters the stump and its skin
+  fades in from the fur colour, the gauntlet stays under the shoulder pad, the cheeks sit inside the loincloth, the
+  hair strips no longer z-fight (lifted off the scalp and each other), the hair a little shorter and off the neck.
+- **Playable characters:** `[Mods] Character=gene|xavier`; Xavier (from *Xavier: Renegade Angel*) in place of Gene,
+  with Gene's God Hand arm and his loincloth on the coat's cloth physics, full-resolution textures through the
+  renderer's replacement system. Character files are written over the game's at disc level (the AFS table is never
+  changed: a changed size broke later files).
+- **Launcher** in the game window: Install (pick and check the disc image), Play, Options (Display, Graphics, Gameplay,
+  Mods, Controls), "don't show again".
+- **Unlock Hard** and **mute music** options. **Roulette**: d-pad scrolls the God Reel, up steps back with the
+  animation following, `RouletteTimer=double` for twice the time.
+- **Menus** drawn as on the PS2 (4:3 with side bars) or stretched; the in-game HUD at the screen edges (16:9 layout)
+  or where the PS2 had it.
+
+## October 22, 2026
+
+- **PCSX2's hardware renderer** (Direct3D 11, `pcsx2gs.dll`) is the default, with God Hand's PCSX2 GameIndex fixes.
+- **VU1 microcode compiled ahead of time** per upload (`build.py vu`), captured uploads included; MTVU on by default.
+  The in-game slowdowns of the first builds are gone.
+- **60 FPS mode** (`[Game] Fps60=1`): a port of the "60 Fps" PCSX2 patch as switchable recompiler patches, with the
+  places where the port's timing differed from PCSX2 fixed (a stuck left stick, the roulette timer and dial, HUD and
+  menu animation speed, stick-wiggle and scrolling-arrow prompts).
+- **L3 dash** (`L3Dash=1`): clicking the left stick dashes (a quick double tap forward), also while walking.
+- **Any aspect ratio** (`[Video] AspectRatio`): a port of the PCSX2 widescreen patch plus a HUD layout system that
+  places each on-screen group per screen third; low-health corners and other screen-edge overlays stay stretched.
+- **Crash log** for normal runs (exception, module and offset, guest pc, host stack), a PC sampler
+  (`GODHAND_PC_SAMPLE`), a call profiler (`GODHAND_CALL_PROFILE`), a counter finder, HUD frame dumps (F6) and the RAM
+  dump (F8).
+- Window opens at a usable size; SDL3 controllers on; build fixes.
+
+## Before the fork: LasVola's godhand-recomp (to October 20, 2026)
+
+The entries below are from the project God Hand: Rearmed was forked from.
 
 ## October 20, 2026
 

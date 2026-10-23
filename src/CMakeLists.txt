@@ -35,6 +35,7 @@ set(GODHAND_HOST_SOURCES
     godhand/button_prompts.cpp
     godhand/crate_prompts.cpp
     godhand/call_profile.cpp
+    godhand/guest_symbols.cpp
     godhand/call_trace.cpp
     godhand/movie_watchdog.cpp
     godhand/frame_patches.cpp
@@ -236,6 +237,11 @@ add_executable(godhand ${GODHAND_HOST_SOURCES} "${GODHAND_MODULE_INDEX}")
 if(GODHAND_MODULE_LIBRARIES)
     target_link_libraries(godhand PRIVATE ${GODHAND_MODULE_LIBRARIES})
 endif()
+# The port's own resources (resources/images/logo.png: the launcher's logo) next to the exe, merged into the resources/
+# folder pcsx2gs.dll also fills (shaders, OSD font).
+add_custom_command(TARGET godhand POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/resources" "$<TARGET_FILE_DIR:godhand>/resources"
+    COMMENT "Copying the port's resources")
 target_include_directories(godhand PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_BINARY_DIR}/godhand_generated"

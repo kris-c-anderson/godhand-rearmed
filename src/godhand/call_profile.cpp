@@ -1,4 +1,5 @@
 #include "godhand/call_profile.h"
+#include "godhand/guest_symbols.h"
 #include "godhand/hle_bindings.h"
 #include "godhand/log.h"
 
@@ -90,8 +91,10 @@ namespace godhand::callprofile
         {
             const uint32_t address = g_ps2RecompiledFunctionTableBase + hot[i].second * 4u;
             const SdkFunction *sdk = sdkFunctionAt(address);
-            std::fprintf(stderr, "[call-profile]   %10u  0x%08x %.*s\n", hot[i].first, address,
-                         sdk ? static_cast<int>(sdk->name.size()) : 0, sdk ? sdk->name.data() : "");
+            const char *name = symbols::functionAt(address);
+            std::fprintf(stderr, "[call-profile]   %10u  0x%08x %.*s%s\n", hot[i].first, address,
+                         sdk ? static_cast<int>(sdk->name.size()) : 0, sdk ? sdk->name.data() : "",
+                         (name && !sdk) ? name : "");
         }
         static const std::pair<uint32_t, uint32_t> range = []
         {
@@ -108,7 +111,7 @@ namespace godhand::callprofile
             {
                 const uint32_t address = g_ps2RecompiledFunctionTableBase + slot * 4u;
                 if (address >= range.first && address < range.second)
-                    std::fprintf(stderr, "[call-profile] range %10u  0x%08x\n", count, address);
+                    std::fprintf(stderr, "[call-profile] range %10u  %s\n", count, symbols::describe(address).c_str());
             }
         }
         std::fflush(stderr);

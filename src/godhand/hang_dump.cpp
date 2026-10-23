@@ -1,4 +1,5 @@
 #include "godhand/hang_dump.h"
+#include "godhand/guest_symbols.h"
 #include "godhand/call_profile.h"
 #include "godhand/hle_bindings.h"
 
@@ -65,6 +66,8 @@ namespace godhand::hangdump
             char text[96];
             if (const SdkFunction *function = sdkFunctionAt(pc))
                 std::snprintf(text, sizeof(text), "0x%08x (%.*s)", pc, static_cast<int>(function->name.size()), function->name.data());
+            else if (symbols::functionAt(pc))
+                std::snprintf(text, sizeof(text), "0x%08x (%s)", pc, symbols::describe(pc).c_str());
             else
                 std::snprintf(text, sizeof(text), "0x%08x", pc);
             return text;

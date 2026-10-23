@@ -16,6 +16,7 @@
 #include "runtime/gs/gs_pcsx2_backend.h"
 #include "runtime/gs/gs_threaded_backend.h"
 #include "godhand/call_profile.h"
+#include "godhand/guest_symbols.h"
 #include "godhand/button_prompts.h"
 #include "godhand/call_trace.h"
 #include "godhand/default_ini.h" // generated from godhand.ini by src/CMakeLists.txt
@@ -147,7 +148,7 @@ namespace
         {
             wchar_t text[160];
             std::swprintf(text, 160, L"This processor does not support %hs, which this build of God Hand needs.", missing);
-            MessageBoxW(nullptr, text, L"God Hand", MB_OK | MB_ICONERROR);
+            MessageBoxW(nullptr, text, L"God Hand: Rearmed", MB_OK | MB_ICONERROR);
         }
         return false;
     }
@@ -225,8 +226,11 @@ namespace
         if (PS2Runtime *runtime = g_crashRuntime.load())
         {
             if (const R5900Context *ctx = runtime->eeScheduler().currentContext())
-                std::fprintf(stderr, "[crash] guest: pc 0x%08x ra 0x%08x sp 0x%08x\n", ctx->pc,
-                             static_cast<uint32_t>(_mm_cvtsi128_si32(ctx->r[31])), static_cast<uint32_t>(_mm_cvtsi128_si32(ctx->r[29])));
+                std::fprintf(stderr, "[crash] guest: pc 0x%08x (%s) ra 0x%08x (%s) sp 0x%08x\n", ctx->pc,
+                             godhand::symbols::describe(ctx->pc).c_str(),
+                             static_cast<uint32_t>(_mm_cvtsi128_si32(ctx->r[31])),
+                             godhand::symbols::describe(static_cast<uint32_t>(_mm_cvtsi128_si32(ctx->r[31]))).c_str(),
+                             static_cast<uint32_t>(_mm_cvtsi128_si32(ctx->r[29])));
         }
         if (record.ExceptionCode != EXCEPTION_STACK_OVERFLOW && info->ContextRecord)
         {

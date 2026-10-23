@@ -205,7 +205,7 @@ namespace godhand::launcher
             Result result = Result::Quit;
             ImFont *font = nullptr;
             float unit = 1.0f; // UI scale: window height / 720
-            Texture2D logo{};  // resources/images/logo.png when present (not in the repository: the game's logo)
+            Texture2D logo{};  // resources/images/logo.png when present (the project's own logo)
         };
 
         float fontSize(const State &state, float base) { return std::round(base * state.unit); }
@@ -251,9 +251,12 @@ namespace godhand::launcher
                 pushSize(state, 92.0f);
                 centeredText("G O D   H A N D", ImVec4(1.0f, 0.62f, 0.30f, 1.0f));
                 ImGui::PopFont();
+                pushSize(state, 40.0f);
+                centeredText("R E A R M E D", ImVec4(1.0f, 0.62f, 0.30f, 1.0f));
+                ImGui::PopFont();
             }
             pushSize(state, 22.0f);
-            centeredText("Recompiled for PC", kTextDim);
+            centeredText("A native PC port of God Hand", kTextDim);
             ImGui::PopFont();
             ImGui::Dummy(ImVec2(0.0f, fontSize(state, 40.0f)));
         }
@@ -645,7 +648,7 @@ namespace godhand::launcher
             state.screen = Screen::Install;
         }
 
-        ps2_host_display::openHostWindow("God Hand");
+        ps2_host_display::openHostWindow("God Hand: Rearmed");
         if (!ps2_host_display::vsyncEnabled())
             SetTargetFPS(60);
         rlImGuiSetup(true);
