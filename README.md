@@ -33,8 +33,8 @@ work. Improvements and discoveries from the recomp and from the
   gameplay, mods, controls.
 - **Quality of life:** L3 dash (click the stick to dash), d-pad scrolling and stepping back in the God Reel, a double-time
   roulette timer, Hard unlocked from the start, music mute, the game's blur effects at full resolution.
-- **Playable characters:** Gene, or **Xavier** (from *Xavier: Renegade Angel*, model used with permission) wearing
-  Gene's God Hand. The character system swaps models at the disc level, so more can follow.
+- **Playable characters:** a character system that swaps the player model at the disc level, with an example mod:
+  **Xavier** from *Xavier: Renegade Angel*, wearing Gene's God Hand. More characters can follow the same way.
 - **Keyboard, mouse and controllers**, rebindable in game (F1). Button prompts show the keys and buttons you use.
 - **Diagnostics for developers:** crash log with function names (from the decomp), PC sampler, call profiler,
   frame and RAM dumps.
@@ -119,8 +119,8 @@ In game: **F1** controls, **F6** / **F7** menu and HUD layout, **F11** full scre
 
 A character is a folder `mods/characters/<id>/` next to the game with the disc files it replaces (`pl/pl00.dat` is
 Gene's model) and, optionally, `textures/` with full-resolution replacements in PCSX2's format. The port writes them
-over the game's files as the disc is read, so the game itself is never patched. `assets/characters/xavier/` is the
-source for Xavier; `tools/models/` has the model and texture writers for the game's formats and the Blender pipeline
+over the game's files as the disc is read, so the game itself is never patched. Xavier is the example mod:
+`assets/characters/xavier/` is its source; `tools/models/` has the model and texture writers for the game's formats and the Blender pipeline
 that put Xavier onto Gene's skeleton (`tools/models/xavier/README.md`).
 
 ### HD textures
@@ -185,7 +185,8 @@ options were on (60 FPS, aspect ratio, character).
   the aspect-ratio support.
 - [Ace Combat 5 static recompilation](https://github.com/sal063/Ace-Combat-5-Static-recompilation): the movie decoder
   (Apache-2.0).
-- Xavier (*Xavier: Renegade Angel*): model used with the permission of its author.
+- Xavier and *Xavier: Renegade Angel* belong to Adult Swim. The Xavier mod is a fan-made example of the character
+  system and is not affiliated with or endorsed by Adult Swim.
 - God Hand: Rearmed is directed, play-tested and written by Kris, built with AI assistance (Claude
   by Anthropic), with ideas and testing from his friends.
 

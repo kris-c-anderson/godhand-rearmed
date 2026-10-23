@@ -1,7 +1,7 @@
 # Xavier for God Hand
 
 `assets/characters/xavier/` (the model nodes and textures) was made from `Xavier_v1_1_1-README.blend` (Xavier:
-Renegade Angel, used with permission) with these scripts, Blender 5.2 as a Python module (`pip install bpy==5.2.3
+Renegade Angel, © Adult Swim) with these scripts, Blender 5.2 as a Python module (`pip install bpy==5.2.3
 pillow`), numpy and Pillow:
 
 1. `prep1.py`: Xavier's mesh (shape keys applied, rest pose) moved onto Gene's skeleton: uniform scale to Gene's height
