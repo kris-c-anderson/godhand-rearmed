@@ -1,7 +1,42 @@
 {
   "files": {
-    "pl/pl00.dat": {"nodes": "xavier_nodes.scr", "textures": "xavier_textures.tm3",
-                    "trim": {"GH_00": {"axis": [-1, 0, 0], "min": 0.27}, "GHA_00": {"axis": [-1, 0, 0], "min": 0.27}}},
-    "pl/pl01.dat": {"nodes": "xavier_coat.scr", "textures": "xavier_textures.tm3", "keep": [], "append_textures": false}
+    "pl/pl00.dat": {
+      "nodes": "xavier_nodes.scr",
+      "textures": "xavier_textures.tm3",
+      
+    "trim": {
+        "GH_00": {
+          "axis": [
+            -1,
+            0,
+            0
+          ],
+          "min": 0.29
+        },
+        "GHA_00": {
+          "axis": [
+            -1,
+            0,
+            0
+          ],
+          "min": 0.27,
+          "tint": {
+            "start": 0.284,
+            "length": 0.08,
+            "rgb": [
+              54,
+              44,
+              44
+            ]
+          }
+        }
+      }
+    },
+    "pl/pl01.dat": {
+      "nodes": "xavier_coat.scr",
+      "textures": "xavier_textures.tm3",
+      "keep": [],
+      "append_textures": false
+    }
   }
 }

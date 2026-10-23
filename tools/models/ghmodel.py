@@ -7,7 +7,7 @@ pl/pl00.dat: a dat is (u32 count, u32 offsets[count], char type[4][count]), entr
 112-byte node records. A vertex buffer holds triangle strips: position + flag (0x8000 = restart, 0/1 = winding),
 int8 normals, int16 UVs (4096 = 1.0; v = -4096 * (1 - t), t counted from the top row, so -4096 is the top and 0 the bottom), RGBA colour (0x80 = 1.0) and three bone weights (index*4, percent).
 """
-import struct
+import math, struct
 
 def u32(b,o): return struct.unpack_from('<I',b,o)[0]
 def i32(b,o): return struct.unpack_from('<i',b,o)[0]
@@ -189,20 +189,65 @@ def strip_tris(flags):
         tris.append((k-2,k-1,k) if fl==0 else (k-1,k-2,k))
     return tris
 
-def trim_mdb(mdb, axis, minimum):
-    """The node without the triangles lying wholly below 'minimum' along 'axis' (model space, rest pose): e.g. the
-    part of the God Hand arm hidden inside a character's own upper arm."""
+def _lerp_vert(vb, i, j, t):
+    """The vertex at fraction t from vertex i to vertex j of a buffer (positions, normals, UVs, colours and the
+    dominant-bone weights interpolated; the weights keep the bones of the vertex nearer to t)."""
+    out={}
+    out['pos']=tuple(vb['pos'][i][k]+(vb['pos'][j][k]-vb['pos'][i][k])*t for k in range(3))
+    if vb.get('nrm') is not None:
+        n=[vb['nrm'][i][k]+(vb['nrm'][j][k]-vb['nrm'][i][k])*t for k in range(3)]
+        l=math.sqrt(sum(x*x for x in n)) or 1.0
+        out['nrm']=tuple(int(round(x/l*127)) for x in n)
+    out['uv']=tuple(int(round(vb['uv'][i][k]+(vb['uv'][j][k]-vb['uv'][i][k])*t)) for k in range(2))
+    if vb.get('col') is not None:
+        out['col']=tuple(int(round(vb['col'][i][k]+(vb['col'][j][k]-vb['col'][i][k])*t)) for k in range(4))
+    if vb.get('wt') is not None:
+        out['wt']=vb['wt'][j] if t>0.5 else vb['wt'][i]
+    return out
+
+def trim_mdb(mdb, axis, minimum, tint=None):
+    """The node cut by the plane axis.p = minimum (model space, rest pose): only the part on the far side (axis.p >=
+    minimum) stays, triangles crossing the plane are clipped at it (e.g. the God Hand arm, cut where it enters a
+    character's own upper arm; nothing of it reaches past the plane). tint: (start, length, (r,g,b)) multiplies the
+    vertex colours from the cut plane: the colour at axis.p <= start, white (unchanged) at start + length and beyond,
+    so the arm fades from the character's fur into Gene's skin."""
     from strip import build_buffers
     vbs=[]
     for vb in mdb['vbs']:
-        d=[p[0]*axis[0]+p[1]*axis[1]+p[2]*axis[2] for p in vb['pos']]
-        tris=[t for t in strip_tris(vb['flags']) if max(d[i] for i in t)>=minimum]
+        d=[p[0]*axis[0]+p[1]*axis[1]+p[2]*axis[2]-minimum for p in vb['pos']]
+        verts={k:{key:vb[key][k] for key in ('pos','nrm','uv','col','wt') if vb.get(key) is not None} for k in range(len(vb['pos']))}
+        dist=dict(enumerate(d))
+        cut={}
+        def cutv(i,j):
+            key=(min(i,j),max(i,j))
+            if key not in cut:
+                t=dist[i]/(dist[i]-dist[j])
+                n=len(verts); verts[n]=_lerp_vert(vb,i,j,t); dist[n]=0.0; cut[key]=n
+            return cut[key]
+        tris=[]
+        for t in strip_tris(vb['flags']):
+            inside=[i for i in t if d[i]>=0]
+            if len(inside)==3: tris.append(t); continue
+            if not inside: continue
+            # clip: walk the edges, keep the inside polygon (3 or 4 corners), fan it
+            poly=[]
+            for e in range(3):
+                a,b=t[e],t[(e+1)%3]
+                if d[a]>=0: poly.append(a)
+                if (d[a]>=0)!=(d[b]>=0): poly.append(cutv(a,b))
+            for k in range(1,len(poly)-1): tris.append((poly[0],poly[k],poly[k+1]))
         if not tris: continue
+        if tint and vb.get('col') is not None:
+            start,length,rgb=tint
+            for k,v in verts.items():
+                f=min(1.0,max(0.0,(dist[k]+minimum-start)/length)) if length>0 else 1.0
+                c=v['col']
+                v['col']=tuple(int(round(c[q]*(rgb[q]/128.0+(1.0-rgb[q]/128.0)*f))) for q in range(3))+(c[3],)
         for buf in build_buffers(tris, 1000):
             ids=[i for i,_ in buf]
             out=dict(vb); out['flags']=[f for _,f in buf]
             for key in ('pos','nrm','uv','col','wt'):
-                if vb.get(key) is not None: out[key]=[vb[key][i] for i in ids]
+                if vb.get(key) is not None: out[key]=[verts[i][key] for i in ids]
             vbs.append(out)
     return dict(vbs=vbs or empty_mdb(0)['vbs'], hdr=mdb['hdr'])
 
