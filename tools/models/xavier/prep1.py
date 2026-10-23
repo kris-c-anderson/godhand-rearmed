@@ -30,14 +30,15 @@ ARM_CUT=0.5; PAD_RADIAL=1.16; PAD_AXIAL=1.05
 # The cut's open ring is capped (a disc of fur), so nothing shows through the stump around the God Hand arm.
 # Butt: the cheeks scaled towards the pelvis by BUTT_SCALE (1 = as modelled; 0.945 after two rounds in game), weighted by the butt bones, so they
 # stay inside the loincloth. Hair: every strip pushed out along its normals by HAIR_LIFT, plus up to HAIR_STAGGER
-# more for the outer strips (ordered by distance from the head), so strips lying on the scalp or on each other no
-# longer z-fight; HAIR_SHORTEN raises the hair below the ears towards them (1 = as modelled; 0.85 = the part below
-# ear level 15% shorter); HAIR_FLARE pushes the hair below the ears back from the neck by that much (metres),
+# more for the outer strips (ordered by distance from the head); both 0 now: lifting showed the strips' transparent
+# undersides from the front and did not end the z-fighting (which the port's compressed depth range causes, see the
+# status doc). HAIR_SHORTEN raises the hair below the ears towards them at the back of the head only (1 = as
+# modelled; 0.9 = the back hair below ear level 10% shorter); HAIR_FLARE pushes the hair below the ears back from the neck by that much (metres),
 # scaled by how far below the ears it is. All overridable from the environment for variants.
 def _env(n,d): return float(os.environ.get(n,d))
 BUTT_SCALE=_env('XAVIER_BUTT_SCALE',0.945)
-HAIR_LIFT=_env('XAVIER_HAIR_LIFT',0.004); HAIR_STAGGER=_env('XAVIER_HAIR_STAGGER',0.008)
-HAIR_SHORTEN=_env('XAVIER_HAIR_SHORTEN',0.9); HAIR_FLARE=_env('XAVIER_HAIR_FLARE',0.02)
+HAIR_LIFT=_env('XAVIER_HAIR_LIFT',0.0); HAIR_STAGGER=_env('XAVIER_HAIR_STAGGER',0.0)
+HAIR_SHORTEN=_env('XAVIER_HAIR_SHORTEN',0.9); HAIR_FLARE=_env('XAVIER_HAIR_FLARE',0.0)
 HAIR_EAR_Z=1.62   # ear level, Blender z (game y) after scaling to Gene's height
 Rarm=['def_arm_0.R','def_arm_1.R','def_arm_1_bridge.R','def_arm_1_elbow_dc_0.R','def_hand_0.R']+['def_finger_%d_%d'%(i,j) for i in range(5) for j in range(3)]
 
@@ -231,7 +232,8 @@ for name in names:
             for v in bm.verts:
                 below=HAIR_EAR_Z-v.co.z
                 if below<=0: continue
-                v.co.z=HAIR_EAR_Z-below*HAIR_SHORTEN
+                back=min(1.0,max(0.0,(v.co.y+0.02)/0.06))  # 1 at the back of the head (y > 0.04), 0 at the sides/front
+                v.co.z=HAIR_EAR_Z-below*(1.0-(1.0-HAIR_SHORTEN)*back)
                 v.co.y+=HAIR_FLARE*min(1.0,below/lowest)*(1 if v.co.y>0 else 0.3)  # mostly the back of the hair
         bm.to_mesh(me); bm.free()
     # delete right arm & mouth interior

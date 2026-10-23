@@ -11,8 +11,10 @@ Each assets/characters/<id>/character.json lists the disc files it replaces:
 are appended unless "append_textures" is false); "trim": {"GH_00": {"axis": [-1, 0, 0], "min": 0.27}} cuts a kept
 node at the plane axis.p = min (rest pose, model space), keeping the far side and clipping the triangles that cross it
 (e.g. the God Hand arm where it enters the character's own upper arm); a "tint": {"start": s, "length": l, "rgb": [r,
-g, b]} on a trim multiplies the node's vertex colours by rgb/128 up to axis.p = s, fading to unchanged over l (the arm's
-skin starting in the character's fur colour); "empty": every model node of that file drawn as nothing. A "textures" folder in the
+g, b]} on a trim multiplies the node's vertex colours by rgb/128 up to axis.p = s, fading to unchanged over l; an
+"inset": {"start": s, "factor": f, "centre": [cy, cz]} pulls the vertices between the cut and axis.p = s towards the
+bone line (by f at the cut, unchanged at s), so the part inside the character's own stump stays hidden; "empty": every
+model node of that file drawn as nothing. A "textures" folder in the
 character's assets (PCSX2 replacement images named by the in-game textures' hashes, made by the character's encoder) is
 copied to <out>/mods/characters/<id>/textures: the runtime adds it to the replacement folders, so the character's
 textures draw at full resolution. The output is built
@@ -55,9 +57,10 @@ def build(iso, out, only=()):
                 texs = open(os.path.join(folder, how["textures"]), "rb").read()
                 trim = {}
                 for name, t in how.get("trim", {}).items():
-                    tint = t.get("tint")
+                    tint, inset = t.get("tint"), t.get("inset")
                     trim[name] = (tuple(t["axis"]), t["min"],
-                                  (tint["start"], tint["length"], tuple(tint["rgb"])) if tint else None)
+                                  (tint["start"], tint["length"], tuple(tint["rgb"])) if tint else None,
+                                  (inset["start"], inset["factor"], tuple(inset["centre"])) if inset else None)
                 data = ghmodel.merge_model(game, nodes, texs, tuple(how.get("keep", ghmodel.KEEP)),
                                            how.get("append_textures", True), trim)
             if len(data) > len(game):

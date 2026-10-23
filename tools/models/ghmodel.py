@@ -205,12 +205,15 @@ def _lerp_vert(vb, i, j, t):
         out['wt']=vb['wt'][j] if t>0.5 else vb['wt'][i]
     return out
 
-def trim_mdb(mdb, axis, minimum, tint=None):
+def trim_mdb(mdb, axis, minimum, tint=None, inset=None):
     """The node cut by the plane axis.p = minimum (model space, rest pose): only the part on the far side (axis.p >=
     minimum) stays, triangles crossing the plane are clipped at it (e.g. the God Hand arm, cut where it enters a
     character's own upper arm; nothing of it reaches past the plane). tint: (start, length, (r,g,b)) multiplies the
     vertex colours from the cut plane: the colour at axis.p <= start, white (unchanged) at start + length and beyond,
-    so the arm fades from the character's fur into Gene's skin."""
+    so the arm fades from the character's fur into Gene's skin. inset: (start, factor, (cy, cz)) pulls the vertices
+    between the cut plane and axis.p = start towards the line y = cy, z = cz (the bone): by factor at the cut, by 1
+    (unchanged) at start, so the part of the arm that sits inside the character's own stump stays inside it (the arm
+    is thicker than the stump at the shoulder). Only for axis along x."""
     from strip import build_buffers
     vbs=[]
     for vb in mdb['vbs']:
@@ -237,6 +240,13 @@ def trim_mdb(mdb, axis, minimum, tint=None):
                 if (d[a]>=0)!=(d[b]>=0): poly.append(cutv(a,b))
             for k in range(1,len(poly)-1): tris.append((poly[0],poly[k],poly[k+1]))
         if not tris: continue
+        if inset:
+            start,factor,(cy,cz)=inset
+            for k,v in verts.items():
+                dk=dist[k]+minimum
+                if dk<start:
+                    f=factor+(1.0-factor)*max(0.0,(dk-minimum)/(start-minimum))
+                    x,y,z=v['pos']; v['pos']=(x,cy+(y-cy)*f,cz+(z-cz)*f)
         if tint and vb.get('col') is not None:
             start,length,rgb=tint
             for k,v in verts.items():
