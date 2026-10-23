@@ -109,11 +109,16 @@ namespace godhand
             }
         }
 
-        // In menus the d-pad's up and down also push the left stick: some lists (the roulette setup's technique list)
-        // scroll only with the stick.
-        void menuDpad(uint8_t *rdram)
+        // The in-game roulette (the move wheel in a fight): its list moves only with the left stick; while it is up, the
+        // d-pad's up and down push the stick too. Seen through cCockRoulette move's dial step (0x145308, only while the
+        // wheel is up), stamped with the game frame.
+        uint64_t g_rouletteSeen = 0;
+
+        void rouletteSeen(uint8_t *, R5900Context *, PS2Runtime *) { g_rouletteSeen = g_gameFrame; }
+
+        void rouletteDpad(uint8_t *rdram)
         {
-            if (!hud::menuActive())
+            if (g_rouletteSeen == 0u || g_gameFrame - g_rouletteSeen > 2u)
                 return;
             uint16_t buttons = 0;
             std::memcpy(&buttons, &ram8(rdram, kPadButtons), sizeof(buttons));
@@ -162,7 +167,7 @@ namespace godhand
             {
                 restoreInjected(rdram);
                 l3Dash(rdram);
-                menuDpad(rdram);
+                rouletteDpad(rdram);
                 return;
             }
             ram8(rdram, kFrameDivider) = 1u;
@@ -205,7 +210,7 @@ namespace godhand
             if (g_frames % 3600u == 0u)
                 g_holds = g_staleRestores = 0u;
             l3Dash(rdram);
-            menuDpad(rdram);
+            rouletteDpad(rdram);
         }
 
         // Replaces c.eq.s f0,f2 at 0x2C81C0: the condition is "same integer frame" (cvt.w.s of both).
@@ -297,6 +302,7 @@ namespace godhand
         ps2xRegisterHostHook("gh_fps60_hitbox_compare", &hitboxCompare);
         ps2xRegisterHostHook("gh_fps60_roulette_timer", &rouletteTimer);
         ps2xRegisterHostHook("gh_fps60_roulette_dial", &rouletteDial);
+        ps2xRegisterHostHook("gh_roulette_seen", &rouletteSeen);
         ps2xRegisterHostHook("gh_fps60_ui_anim", &uiAnimStep);
         ps2xRegisterHostHook("gh_fps60_button_timer", &buttonTimer);
         ps2xRegisterHostHook("gh_fps60_wiggle_begin", &wiggleBegin);

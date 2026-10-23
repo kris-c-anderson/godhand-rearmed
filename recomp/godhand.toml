@@ -124,6 +124,13 @@ address = "0x0013C104"
 value = "0x3C014040"
 flag = "fps60"
 
+# The in-game roulette is up (cCockRoulette move, before lhu v0,0x4D0(s3): reached only while the wheel shows): its
+# d-pad up/down scroll support (src/godhand/frame_patches.cpp).
+[[patches.hooks]]
+address = "0x00145308"
+hook = "gh_roulette_seen"
+flag = "frame_hook"
+
 # Roulette TIME dial (cCockRoulette move, addiu v0,v0,-1 on +0x4D0, 95 frames): counts with the timer above.
 [[patches.hooks]]
 address = "0x0014530C"

@@ -25,7 +25,7 @@ namespace godhand::hud
     void onFrame(uint8_t *rdram);
 
     // A menu or screen is up (a full-screen background in a non-HUD layout in the last few frames). Tracked at every
-    // aspect ratio (the menu d-pad support uses it).
+    // aspect ratio.
     bool menuActive();
 
     // For the font and gauge width hooks of widescreen.cpp: whether those draws still need narrowing there.
