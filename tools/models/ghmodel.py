@@ -181,9 +181,35 @@ def empty_mdb(bone, mat=0):
             col=[(128,128,128,128)]*3, wt=[((0,bone*4,0,0),(100,0,0,0))]*3, mat=mat, extra=bytes(8))
     return dict(vbs=[vb], hdr=bytes(16)+struct.pack('<f',1.0))
 
-def merge_model(game_dat, mod_scr, mod_tm3, keep=KEEP, append_textures=True):
+def strip_tris(flags):
+    """Triangles of a strip vertex buffer (indices into it), wound as the game draws them."""
+    tris=[]
+    for k,fl in enumerate(flags):
+        if k<2 or fl==0x8000: continue
+        tris.append((k-2,k-1,k) if fl==0 else (k-1,k-2,k))
+    return tris
+
+def trim_mdb(mdb, axis, minimum):
+    """The node without the triangles lying wholly below 'minimum' along 'axis' (model space, rest pose): e.g. the
+    part of the God Hand arm hidden inside a character's own upper arm."""
+    from strip import build_buffers
+    vbs=[]
+    for vb in mdb['vbs']:
+        d=[p[0]*axis[0]+p[1]*axis[1]+p[2]*axis[2] for p in vb['pos']]
+        tris=[t for t in strip_tris(vb['flags']) if max(d[i] for i in t)>=minimum]
+        if not tris: continue
+        for buf in build_buffers(tris, 1000):
+            ids=[i for i,_ in buf]
+            out=dict(vb); out['flags']=[f for _,f in buf]
+            for key in ('pos','nrm','uv','col','wt'):
+                if vb.get(key) is not None: out[key]=[vb[key][i] for i in ids]
+            vbs.append(out)
+    return dict(vbs=vbs or empty_mdb(0)['vbs'], hdr=mdb['hdr'])
+
+def merge_model(game_dat, mod_scr, mod_tm3, keep=KEEP, append_textures=True, trim=None):
     """The game's file with the mod's nodes (by name; 'keep' nodes stay the game's, any other node is drawn as nothing)
-    and textures (by name; new names are appended unless append_textures is False)."""
+    and textures (by name; new names are appended unless append_textures is False). trim: {node: (axis, minimum)}
+    cuts kept nodes (trim_mdb)."""
     ents=dat_read(game_dat)
     out=[]
     mod_kind, mod_nodes = scr_read(mod_scr)
@@ -197,7 +223,9 @@ def merge_model(game_dat, mod_scr, mod_tm3, keep=KEEP, append_textures=True):
             new=[]
             for nd in nodes:
                 if nd['name'] in mods: mdb=mods[nd['name']]
-                elif nd['name'] in keep: mdb=mdb_read(d,nd['mdb_off'])
+                elif nd['name'] in keep:
+                    mdb=mdb_read(d,nd['mdb_off'])
+                    if trim and nd['name'] in trim: mdb=trim_mdb(mdb,*trim[nd['name']])
                 else: mdb=empty_mdb(4 if len(m0['bones'])>4 else 0)
                 new.append(dict(name=nd['name'], mdb=dict(vbs=mdb['vbs'], hdr=mdb['hdr']), srt=nd['srt'], tail=nd['tail']))
             d=scr_write(kind,new,bones,anchor)

@@ -259,6 +259,25 @@ void pcsx2gs::SetTextureFolder(const std::string &folder)
     g_textureSerial = path.filename().string();
 }
 
+namespace
+{
+    std::vector<std::string> g_extraTextureFolders; // AddExtraTextureFolder
+}
+
+void pcsx2gs::AddExtraTextureFolder(const std::string &folder)
+{
+    std::string path = folder;
+    while (!path.empty() && (path.back() == '/' || path.back() == '\\'))
+        path.pop_back();
+    if (!path.empty() && std::find(g_extraTextureFolders.begin(), g_extraTextureFolders.end(), path) == g_extraTextureFolders.end())
+        g_extraTextureFolders.push_back(path);
+}
+
+const std::vector<std::string> &pcsx2gs::ExtraTextureFolders()
+{
+    return g_extraTextureFolders;
+}
+
 void pcsx2gs::SetVerticalFrequency(double hz)
 {
     g_verticalFrequency = hz;

@@ -62,9 +62,20 @@ def raster_mask(shape, tris_px):
     for t in tris_px: d.polygon([tuple(p) for p in t],fill=255)
     return np.asarray(m)>0
 
-textures={}; uvf={}
+# Full-resolution copies of each slot (the same layout, HD_SCALE times bigger or less where the source has less
+# detail), saved under the PCSX2 replacement name of the in-game texture: the game keeps its 16-colour textures and the
+# renderer draws these in their place (runtime: the character's textures folder is a replacement folder).
+HD_MAX=2048
+def hd_scale(TW,TH,parts_src):
+    need=max(max(cw/rw,ch/rh) for cw,ch,rw,rh in parts_src) if parts_src else 1
+    s=1
+    while s<need and s<8 and max(TW,TH)*s*2<=HD_MAX: s*=2
+    return s
+
+textures={}; uvf={}; hd={}
 for idx,nm,TW,TH,alpha,parts in SLOTS:
     canvas=np.zeros((TH,TW,4),np.uint8); mask=np.zeros((TH,TW),bool)
+    crops=[]
     for mat,src,rot,(sx0,sy0,sx1,sy1) in parts:
         fl=[f for f in faces if f['mat']==mat]
         if not fl: print('no faces for',mat); continue
@@ -77,6 +88,7 @@ for idx,nm,TW,TH,alpha,parts in SLOTS:
         crop=im.crop((int(x0),int(y0),int(x1),int(y1)))
         if rot: crop=crop.transpose(Image.Transpose.ROTATE_90)
         canvas[ry0:ry0+rh,rx0:rx0+rw]=np.asarray(crop.resize((rw,rh),Image.LANCZOS))
+        crops.append((crop,rx0,ry0,rw,rh,cw,ch))
         def f_(u,v,W=W,H=H,x0=x0,y0=y0,cw=cw,ch=ch,rot=rot,rx0=rx0,ry0=ry0,rw=rw,rh=rh,TW=TW,TH=TH):
             tx=(u*W-x0)/cw; ty=((1-v)*H-y0)/ch
             if rot: tx,ty=ty,1-tx   # PIL ROTATE_90 (counter-clockwise): (x,y) -> (y, 1-x)
@@ -85,6 +97,16 @@ for idx,nm,TW,TH,alpha,parts in SLOTS:
         tris=[[(f_(*c['uv'])[0]*TW, f_(*c['uv'])[1]*TH) for c in f['c']] for f in fl]
         mask|=raster_mask((TH,TW),tris)
         print('TEX',mat,'->',idx,nm,TW,'x',TH,'part',rw,'x',rh,'from',int(cw),'x',int(ch),'rot' if rot else '')
+    S=hd_scale(TW,TH,[(c[0].size[0],c[0].size[1],c[3],c[4]) for c in crops])
+    big=np.zeros((TH*S,TW*S,4),np.uint8)
+    for crop,rx0,ry0,rw,rh,cw,ch in crops:
+        big[ry0*S:(ry0+rh)*S,rx0*S:(rx0+rw)*S]=np.asarray(crop.resize((rw*S,rh*S),Image.LANCZOS))
+    hd[idx]=big
+    if alpha:
+        # Gene's hair is drawn with its texture's alpha: opaque texels are exactly 0x80 there. Near-opaque and
+        # near-clear texels snap to those, so the hair's body is solid and only its strands blend.
+        for a in (canvas,big):
+            a[...,3]=np.where(a[...,3]>=224,255,np.where(a[...,3]<=24,0,a[...,3]))
     arr=canvas
     sel=arr[mask] if mask.sum()>32 else arr.reshape(-1,4)
     if alpha:
@@ -95,6 +117,7 @@ for idx,nm,TW,TH,alpha,parts in SLOTS:
         pal3=np.array(q.getpalette()[:48],np.uint8).reshape(-1,3); pal=np.hstack([pal3,np.full((len(pal3),1),255,np.uint8)])
     while len(pal)<16: pal=np.vstack([pal,pal[-1:]])
     pal=pal[:16]
+    if alpha: pal[:,3]=np.where(pal[:,3]>=224,255,np.where(pal[:,3]<=24,0,pal[:,3]))
     d=((arr[:,:,None,:].astype(int)-pal[None,None,:,:].astype(int))**2)
     if not alpha: d=d[...,:3]
     ind=np.argmin(d.sum(-1),-1)
@@ -168,5 +191,18 @@ if coat:
 scr=scr_write(3,[dict(name=n,mdb=dict(vbs=nodes[n],hdr=HDR),srt=(1,1,1,0,0,0,0,0,0),tail=TAIL) for n in order], bytes(16*32), 0)
 open(OUT+'/xavier_nodes.scr','wb').write(scr)
 tm=tm3_write([(n,t) for i,(n,t) in sorted(textures.items())])
+from pcsx2tex import replacement_name
+HD=OUT+'/hd'
+os.makedirs(HD,exist_ok=True)
+for f in os.listdir(HD): os.remove(os.path.join(HD,f))
+for i,(n,t) in sorted(textures.items()):
+    big=hd[i]; alpha=[sl for sl in SLOTS if sl[0]==i][0][4]
+    name=replacement_name(t)
+    if alpha:
+        a=big.copy(); a[...,3]=np.round(a[...,3].astype(int)*128/255).astype(np.uint8)  # GS alpha: 0x80 = opaque
+        Image.fromarray(a,'RGBA').save(os.path.join(HD,name+'.png'),optimize=True)
+    else:
+        Image.fromarray(big[...,:3],'RGB').save(os.path.join(HD,name+'.png'),optimize=True)
+    print('HD',n,big.shape[1],'x',big.shape[0],'->',name)
 open(OUT+'/xavier_textures.tm3','wb').write(tm)
 print('scr',len(scr),'tm3',len(tm))

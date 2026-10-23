@@ -23,6 +23,10 @@ bpy.ops.wm.open_mainfile(filepath=XAV)
 arm=bpy.data.objects['kish_080225']
 arm.data.pose_position='REST'
 names=['XavierBody','XavierHair','XavierNecklace','XavierShoulderPad','Xaviersnakeeyes','XavierEyeR','XavierEyesL']
+# Right arm: Xavier's is cut at ARM_CUT along the upper arm (0 shoulder, 1 elbow); the God Hand arm (Gene's GH_00 /
+# GHA_00, trimmed to start inside the cut: character.json) continues from there. The shoulder pad is scaled by
+# PAD_RADIAL around the upper arm and PAD_AXIAL along it.
+ARM_CUT=0.5; PAD_RADIAL=1.12; PAD_AXIAL=1.05
 Rarm=['def_arm_0.R','def_arm_1.R','def_arm_1_bridge.R','def_arm_1_elbow_dc_0.R','def_hand_0.R']+['def_finger_%d_%d'%(i,j) for i in range(5) for j in range(3)]
 
 def bonepos(n):
@@ -167,12 +171,14 @@ for name in names:
         for gb,w in d.items():
             if w>0.001: new.vertex_groups[gb].add([vi],w,'REPLACE')
     me['rsum']=0
+    # place along Xavier's right upper arm (0 shoulder, 1 elbow)
+    tR=np.dot(P-shR,elR-shR)/np.dot(elR-shR,elR-shR)
     if name=='XavierShoulderPad':
-        # bigger, so the God Hand arm's shoulder stays inside it
+        # a little bigger, so it sits over the upper arm's end; its strap rides the upper arm (Gene's bone 7)
         ax=(G[8]-G[7])/np.linalg.norm(G[8]-G[7]); c=newP.mean(0)
         for v in me.vertices:
             d=np.array(v.co)-c; a=np.dot(d,ax)
-            v.co=Vector(c+ax*a*1.1+(d-ax*a)*1.3)
+            v.co=Vector(c+ax*a*PAD_AXIAL+(d-ax*a)*PAD_RADIAL)
     at=me.attributes.new('cloth','FLOAT','POINT')
     for i in range(nv): at.data[i].value=float(cloth[i])
     # delete right arm & mouth interior
@@ -183,7 +189,9 @@ for name in names:
         killf=[f for f in bm.faces if f.material_index in mouth]
         bmesh.ops.delete(bm,geom=killf,context='FACES')
         bm.verts.ensure_lookup_table()
-        killv=[bm.verts[i] for i in range(len(bm.verts)) if rsum[bm.verts[i].index]>=0.5]
+        # Xavier keeps his own shoulder and the top of his upper arm (skinned to Gene's arm bones, so the joint bends
+        # like his own skin); the rest of the arm goes, and Gene's God Hand arm comes out of the upper arm's end.
+        killv=[bm.verts[i] for i in range(len(bm.verts)) if rsum[bm.verts[i].index]>=0.5 and tR[bm.verts[i].index]>ARM_CUT]
         bmesh.ops.delete(bm,geom=killv,context='VERTS')
         loose=[v for v in bm.verts if not v.link_faces]
         bmesh.ops.delete(bm,geom=loose,context='VERTS')

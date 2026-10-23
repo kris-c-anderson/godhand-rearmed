@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace pcsx2gs
 {
@@ -15,6 +16,9 @@ namespace pcsx2gs
     void SetFolders(const std::string &resources, const std::string &cache);
     // Replacement textures: the folder holding "replacements/" (any name; it stands for the serial folder).
     void SetTextureFolder(const std::string &folder);
+    // More folders searched like replacements/ (any layout below them), e.g. a character mod's textures.
+    void AddExtraTextureFolder(const std::string &folder);
+    const std::vector<std::string> &ExtraTextureFolders();
     // Field rate the GS paces for (GetVerticalFrequency), e.g. 59.94.
     void SetVerticalFrequency(double hz);
     // Texts ImGuiManager::RenderOSD draws (pcsx2gs_api.h set_osd); thread-safe.

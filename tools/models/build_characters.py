@@ -8,7 +8,12 @@ Each assets/characters/<id>/character.json lists the disc files it replaces:
                                "append_textures": false}}}
 "nodes"/"textures": the mod's own model nodes and textures merged into the game's file (its skeleton, motions and the
 "keep" nodes, by default the God Hand arm, stay the game's; textures replace the game's of the same name, new names
-are appended unless "append_textures" is false); "empty": every model node of that file drawn as nothing. The output is built
+are appended unless "append_textures" is false); "trim": {"GH_00": {"axis": [-1, 0, 0], "min": 0.27}} drops the
+triangles of a kept node lying wholly below "min" along "axis" (rest pose, model space: e.g. the God Hand arm inside
+the character's own upper arm); "empty": every model node of that file drawn as nothing. A "textures" folder in the
+character's assets (PCSX2 replacement images named by the in-game textures' hashes, made by the character's encoder) is
+copied to <out>/mods/characters/<id>/textures: the runtime adds it to the replacement folders, so the character's
+textures draw at full resolution. The output is built
 from your disc, so like the rest of the build it stays private. Standard library only.
 """
 import json
@@ -46,8 +51,9 @@ def build(iso, out, only=()):
             else:
                 nodes = open(os.path.join(folder, how["nodes"]), "rb").read()
                 texs = open(os.path.join(folder, how["textures"]), "rb").read()
+                trim = {name: (tuple(t["axis"]), t["min"]) for name, t in how.get("trim", {}).items()}
                 data = ghmodel.merge_model(game, nodes, texs, tuple(how.get("keep", ghmodel.KEEP)),
-                                           how.get("append_textures", True))
+                                           how.get("append_textures", True), trim)
             if len(data) > len(game):
                 print("  warning: %s/%s is %d bytes, the game's %d (it must fit the game's place on the disc)" % (cid, rel, len(data), len(game)))
             target = os.path.join(dest, *rel.split("/"))
@@ -55,6 +61,13 @@ def build(iso, out, only=()):
             with open(target, "wb") as f:
                 f.write(data)
             print("  %s: %s %d -> %d bytes" % (cid, rel, len(game), len(data)))
+        hd = os.path.join(folder, "textures")
+        if os.path.isdir(hd):
+            target = os.path.join(dest, "textures")
+            if os.path.isdir(target):
+                shutil.rmtree(target)
+            shutil.copytree(hd, target)
+            print("  %s: %d full-resolution textures" % (cid, len(os.listdir(target))))
         if os.path.isfile(os.path.join(folder, "character.ini")):
             shutil.copyfile(os.path.join(folder, "character.ini"), os.path.join(dest, "character.ini"))
         built += 1

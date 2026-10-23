@@ -194,6 +194,19 @@ namespace godhand::characters
         }
         PS2DiscOverlay::set(std::move(patches));
         GH_INFO(Boot, "playing as " << describe(folder).name << " (" << replaced << " files)");
+        // Full-resolution textures: PCSX2 replacement images named after the character's in-game textures.
+        const fs::path textures = folder / "textures";
+        if (fs::is_directory(textures, error))
+        {
+            const std::u8string native = fs::path(textures).lexically_normal().make_preferred().u8string();
+            const std::string path(native.begin(), native.end());
+#if defined(_WIN32)
+            _putenv_s("PS2X_PCSX2_TEXTURE_EXTRA", path.c_str());
+#else
+            setenv("PS2X_PCSX2_TEXTURE_EXTRA", path.c_str(), 1);
+#endif
+            GH_INFO(Boot, "character '" << id << "': full-resolution textures from " << path);
+        }
     }
 
     namespace

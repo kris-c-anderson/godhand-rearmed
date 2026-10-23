@@ -70,6 +70,27 @@ namespace
                 options.LoadTextureReplacementsAsync = true;
                 continue;
             }
+            if (key == "texture_extra")
+            {
+                // More replacement folders (e.g. a character mod's textures), '|' between them; on even without a pack.
+                size_t start = 0;
+                while (start <= text.size())
+                {
+                    const size_t bar = text.find('|', start);
+                    const std::string folder = text.substr(start, bar == std::string::npos ? std::string::npos : bar - start);
+                    if (!folder.empty())
+                        pcsx2gs::AddExtraTextureFolder(folder);
+                    if (bar == std::string::npos)
+                        break;
+                    start = bar + 1;
+                }
+                if (!pcsx2gs::ExtraTextureFolders().empty())
+                {
+                    options.LoadTextureReplacements = true;
+                    options.LoadTextureReplacementsAsync = true;
+                }
+                continue;
+            }
             const auto clampU8 = [](int v, int lo, int hi) { return static_cast<u8>(std::clamp(v, lo, hi)); };
             if (key == "fxaa")
                 options.FXAA = value != 0;

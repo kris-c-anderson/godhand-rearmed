@@ -22,7 +22,9 @@ namespace godhand::characters
 
     // After PS2Runtime::setIoPaths, before the game runs: [Mods] Character (GODHAND_CHARACTER). Each replacement is
     // written over the game's file in _DATA.AFS through PS2DiscOverlay, zero-padded to its size (sizes and offsets in
-    // the archive never change); a file larger than the game's is left out (logged).
+    // the archive never change); a file larger than the game's is left out (logged). A textures/ folder (PCSX2
+    // replacement images named after the character's in-game textures) becomes an extra replacement folder of the
+    // hardware renderer (PS2X_PCSX2_TEXTURE_EXTRA), so the character draws at full resolution.
     void install(const std::filesystem::path &exeDir);
 
     // Diagnostics for the cloth attachment (Gene's coat, object 0x101 parented to his bone 17 by the player's init at

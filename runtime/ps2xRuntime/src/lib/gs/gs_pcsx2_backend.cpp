@@ -387,6 +387,10 @@ bool GSPcsx2Backend::EnsureOpen()
         else if (textureDir && *textureDir)
             std::fprintf(stderr, "[gs] PS2X_PCSX2_TEXTURE_DIR: no replacements folder in %s\n", utf8(folder).c_str());
     }
+    // PS2X_PCSX2_TEXTURE_EXTRA: more replacement folders ('|' between), e.g. a character mod's own textures (godhand
+    // sets it for [Mods] Character); used with or without a texture pack.
+    if (const char *extra = std::getenv("PS2X_PCSX2_TEXTURE_EXTRA"); extra && *extra)
+        options += std::string("texture_extra=") + extra + ";";
     params.options = options.c_str();
     m_open = g_api->open(&params) != 0;
     m_failed = !m_open;

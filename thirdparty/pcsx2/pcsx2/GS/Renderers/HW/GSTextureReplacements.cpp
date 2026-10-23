@@ -19,6 +19,15 @@
 #include "GS/GSLocalMemory.h"
 #include "GS/Renderers/HW/GSTextureReplacements.h"
 #include "VMManager.h"
+#include <cstdio>
+#include <string>
+#include <vector>
+
+// pcsx2gs (God Hand port): replacement folders the host adds (compat/HostStubs.cpp).
+namespace pcsx2gs
+{
+	const std::vector<std::string>& ExtraTextureFolders();
+}
 
 #include <cinttypes>
 #include <condition_variable>
@@ -439,6 +448,13 @@ void GSTextureReplacements::ReloadReplacementMap()
 
 	files.clear();
 	FileSystem::FindFiles(replacement_dir.c_str(), "*", FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_HIDDEN_FILES | FILESYSTEM_FIND_RECURSIVE, &files);
+	// pcsx2gs (God Hand port): more replacement folders from the host, e.g. a character mod's own textures.
+	for (const std::string& extra : pcsx2gs::ExtraTextureFolders())
+	{
+		const size_t before = files.size();
+		FileSystem::FindFiles(extra.c_str(), "*", FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_HIDDEN_FILES | FILESYSTEM_FIND_RECURSIVE | FILESYSTEM_FIND_KEEP_ARRAY, &files);
+		std::fprintf(stderr, "[pcsx2-gs] %zu replacement textures in %s\n", files.size() - before, extra.c_str());
+	}
 	if (FileSystem::FileExists(replacement_zip.c_str()))
 	{
 		FILESYSTEM_FIND_DATA extra = {};
@@ -733,6 +749,13 @@ std::optional<GSTextureReplacements::ReplacementTexture> GSTextureReplacements::
 	}
 
 	SetReplacementTextureAlphaMinMax(rtex);
+
+	// pcsx2gs (God Hand port): note when a host folder's texture is used (pcsx2gs::ExtraTextureFolders).
+	for (const std::string& extra : pcsx2gs::ExtraTextureFolders())
+	{
+		if (!file.IsArchive() && file.path.compare(0, extra.size(), extra) == 0)
+			std::fprintf(stderr, "[pcsx2-gs] drawing %s (%ux%u)\n", file.path.c_str() + std::min(file.path.size(), extra.size() + 1), rtex.width, rtex.height);
+	}
 
 	return rtex;
 }
