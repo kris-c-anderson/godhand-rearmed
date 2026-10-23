@@ -154,9 +154,15 @@ namespace GSTextureReplacements
 	/// Lookup map of texture names to replacement data which has been cached.
 	static std::unordered_map<TextureName, ReplacementTexture> s_replacement_texture_cache;
 
-	/// pcsx2gs: names whose original texture has one uniform alpha, and that alpha (MatchOriginalAlpha).
-	static std::unordered_map<TextureName, u8> s_original_alpha;
-	static void ForceAlpha(ReplacementTexture& rtex, u8 alpha);
+	/// pcsx2gs: per name, the alpha levels of the game's texture (bit i of the 256-bit set = alpha i used).
+	struct AlphaLevels
+	{
+		u64 bits[4] = {};
+		u64 Hash() const { return (bits[0] * 0x9E3779B97F4A7C15ull) ^ (bits[1] * 0xC2B2AE3D27D4EB4Full) ^ (bits[2] * 0x165667B19E3779F9ull) ^ bits[3] ^ 1u; }
+		bool Has(u32 a) const { return (bits[a >> 6] >> (a & 63)) & 1u; }
+	};
+	static std::unordered_map<TextureName, AlphaLevels> s_original_alpha;
+	static void SnapAlpha(ReplacementTexture& rtex, const AlphaLevels& levels);
 	static void ApplyOriginalAlpha(const TextureName& name, ReplacementTexture& rtex);
 	static std::mutex s_replacement_texture_cache_mutex;
 
@@ -849,9 +855,23 @@ void GSTextureReplacements::ClearReplacementTextures()
 	s_async_loaded_textures.clear();
 }
 
-void GSTextureReplacements::ForceAlpha(ReplacementTexture& rtex, u8 alpha)
+void GSTextureReplacements::SnapAlpha(ReplacementTexture& rtex, const AlphaLevels& levels)
 {
-	const auto fill = [alpha, &rtex](std::vector<u8>& data, u32 width, u32 height, u32 pitch) {
+	// nearest level for every alpha value (ties go up)
+	u8 lut[256];
+	for (int a = 0; a < 256; a++)
+	{
+		int best = -1;
+		for (int d = 0; d < 256 && best < 0; d++)
+		{
+			if (a + d < 256 && levels.Has(static_cast<u32>(a + d)))
+				best = a + d;
+			else if (a - d >= 0 && levels.Has(static_cast<u32>(a - d)))
+				best = a - d;
+		}
+		lut[a] = static_cast<u8>(best < 0 ? a : best);
+	}
+	const auto snap = [&lut, &rtex](std::vector<u8>& data, u32 width, u32 height, u32 pitch) {
 		switch (rtex.format)
 		{
 			case GSTexture::Format::Color:
@@ -859,34 +879,38 @@ void GSTextureReplacements::ForceAlpha(ReplacementTexture& rtex, u8 alpha)
 				{
 					u8* row = data.data() + static_cast<size_t>(y) * pitch;
 					for (u32 x = 0; x < width; x++)
-						row[x * 4 + 3] = alpha;
+						row[x * 4 + 3] = lut[row[x * 4 + 3]];
 				}
 				break;
 			case GSTexture::Format::BC3:
-				// each 16-byte block starts with its alpha block: two endpoints and 3-bit indices
+				// each 16-byte block starts with its alpha block: two endpoints (interpolated between) and indices
 				for (size_t i = 0; i + 16 <= data.size(); i += 16)
 				{
-					data[i] = alpha;
-					data[i + 1] = alpha;
-					std::memset(&data[i + 2], 0, 6);
+					data[i] = lut[data[i]];
+					data[i + 1] = lut[data[i + 1]];
 				}
 				break;
 			case GSTexture::Format::BC2:
-			{
-				// explicit 4-bit alpha (value * 17): the nearest step at or above the target
-				const u8 nibble = static_cast<u8>(std::min(15, (alpha + 16) / 17));
+				// explicit 4-bit alpha (value * 17): the step nearest to the level nearest to it
 				for (size_t i = 0; i + 16 <= data.size(); i += 16)
-					std::memset(&data[i], nibble | (nibble << 4), 8);
+				{
+					for (size_t j = 0; j < 8; j++)
+					{
+						u8& v = data[i + j];
+						const u8 lo = static_cast<u8>(std::min(15, (lut[(v & 15) * 17] + 8) / 17));
+						const u8 hi = static_cast<u8>(std::min(15, (lut[(v >> 4) * 17] + 8) / 17));
+						v = static_cast<u8>(lo | (hi << 4));
+					}
+				}
 				break;
-			}
 			default:
 				break; // BC1/BC7: left as they are
 		}
 	};
-	fill(rtex.data, rtex.width, rtex.height, rtex.pitch);
+	snap(rtex.data, rtex.width, rtex.height, rtex.pitch);
 	for (auto& mip : rtex.mips)
-		fill(mip.data, mip.width, mip.height, mip.pitch);
-	rtex.forced_alpha = alpha;
+		snap(mip.data, mip.width, mip.height, mip.pitch);
+	rtex.snapped_levels_hash = levels.Hash();
 	SetReplacementTextureAlphaMinMax(rtex);
 }
 
@@ -894,30 +918,33 @@ void GSTextureReplacements::ApplyOriginalAlpha(const TextureName& name, Replacem
 {
 	// with s_replacement_texture_cache_mutex held
 	const auto it = s_original_alpha.find(name);
-	if (it == s_original_alpha.end() || rtex.forced_alpha == it->second)
+	if (it == s_original_alpha.end() || rtex.snapped_levels_hash == it->second.Hash())
 		return;
 	const std::pair<u8, u8> before = rtex.alpha_minmax;
-	ForceAlpha(rtex, it->second);
-	if (before.first != it->second || before.second != it->second)
-	{
-		static u32 s_count = 0;
-		if (++s_count <= 64)
-			std::fprintf(stderr, "[pcsx2-gs] HD texture %016llx-%016llx: alpha %u..%u set to the game's %u (%u so far)\n",
-				static_cast<unsigned long long>(name.TEX0Hash), static_cast<unsigned long long>(name.CLUTHash), before.first,
-				before.second, it->second, s_count);
-	}
+	SnapAlpha(rtex, it->second);
+	static u32 s_count = 0;
+	if (++s_count <= 100)
+		std::fprintf(stderr, "[pcsx2-gs] HD texture %016llx-%016llx: alpha %u..%u snapped to the game's levels (now %u..%u; %u so far)\n",
+			static_cast<unsigned long long>(name.TEX0Hash), static_cast<unsigned long long>(name.CLUTHash), before.first,
+			before.second, rtex.alpha_minmax.first, rtex.alpha_minmax.second, s_count);
 }
 
-void GSTextureReplacements::MatchOriginalAlpha(const GSTextureCache::HashCacheKey& hash, u8 alpha)
+void GSTextureReplacements::MatchOriginalAlpha(const GSTextureCache::HashCacheKey& hash, const u32* clut, u32 entries)
 {
 	static const bool enabled = [] { const char* v = std::getenv("PS2X_PCSX2_MATCH_ALPHA"); return !(v && v[0] == '0'); }();
-	if (!enabled)
+	if (!enabled || !clut || entries == 0)
 		return;
 	const TextureName name(CreateTextureName(hash, 0));
 	if (s_replacement_texture_filenames.find(name) == s_replacement_texture_filenames.end())
 		return;
+	AlphaLevels levels;
+	for (u32 i = 0; i < entries; i++)
+	{
+		const u32 a = clut[i] >> 24;
+		levels.bits[a >> 6] |= u64{1} << (a & 63);
+	}
 	std::unique_lock<std::mutex> lock(s_replacement_texture_cache_mutex);
-	s_original_alpha[name] = alpha;
+	s_original_alpha[name] = levels;
 	const auto it = s_replacement_texture_cache.find(name);
 	if (it != s_replacement_texture_cache.end())
 		ApplyOriginalAlpha(name, it->second);

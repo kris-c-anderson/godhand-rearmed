@@ -7136,20 +7136,13 @@ GSTextureCache::HashCacheEntry* GSTextureCache::LookupHashCache(const GIFRegTEX0
 	// check for a replacement texture with the full clut key
 	if (replace)
 	{
-		// pcsx2gs (God Hand port): a paletted texture whose palette has one alpha everywhere (and whose alpha is used,
-		// TCC=1) is drawn with that alpha everywhere by the game; its replacement must be too (MatchOriginalAlpha).
+		// pcsx2gs (God Hand port): a paletted texture whose alpha is used (TCC=1): its replacement keeps to the alpha
+		// levels of the game's palette (MatchOriginalAlpha).
 		if (clut && TEX0.TCC)
 		{
 			const GSLocalMemory::psm_t& psm = GSLocalMemory::m_psm[TEX0.PSM];
 			if (psm.pal > 0)
-			{
-				const u32 a0 = clut[0] >> 24;
-				bool uniform = true;
-				for (u32 i = 1; i < psm.pal && uniform; i++)
-					uniform = (clut[i] >> 24) == a0;
-				if (uniform)
-					GSTextureReplacements::MatchOriginalAlpha(key, static_cast<u8>(a0));
-			}
+				GSTextureReplacements::MatchOriginalAlpha(key, clut, psm.pal);
 		}
 
 		bool replacement_texture_pending = false;
