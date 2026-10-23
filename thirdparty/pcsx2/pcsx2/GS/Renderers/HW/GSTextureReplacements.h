@@ -27,6 +27,9 @@ namespace GSTextureReplacements
 			std::vector<u8> data;
 		};
 		std::vector<MipData> mips;
+
+		// pcsx2gs (God Hand port): alpha forced to the original texture's uniform alpha (MatchOriginalAlpha); -1 = not.
+		int forced_alpha = -1;
 	};
 
 	void Initialize();
@@ -42,6 +45,13 @@ namespace GSTextureReplacements
 	bool HasReplacementTextureWithOtherPalette(const GSTextureCache::HashCacheKey& hash);
 	GSTexture* LookupReplacementTexture(const GSTextureCache::HashCacheKey& hash, bool mipmap, bool* pending, std::pair<u8, u8>* alpha_minmax);
 	GSTexture* CreateReplacementTexture(const ReplacementTexture& rtex, bool mipmap);
+
+	// pcsx2gs (God Hand port): the game's own texture for this key has one alpha value everywhere (every palette entry
+	// the same: an opaque character or level texture has 0x80 throughout), so its replacement gets exactly that alpha.
+	// Packs made from dumps and edited carry 0x7F, 0x40 and other values there: the game's alpha test (GREATER 0x7F,
+	// AFAIL FB_ONLY) then fails, those texels are blended half-transparent and write no depth, so the scene behind
+	// shows through and the depth-of-field mask blurs over them. PS2X_PCSX2_MATCH_ALPHA=0 turns it off.
+	void MatchOriginalAlpha(const GSTextureCache::HashCacheKey& hash, u8 alpha);
 	void ProcessAsyncLoadedTextures();
 
 	void DumpTexture(const GSTextureCache::HashCacheKey& hash, const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA,

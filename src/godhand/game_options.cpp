@@ -11,7 +11,8 @@
 // first version of this option missed): volume x the cSnd category levels (0x5FEE00) -> the dB table at 0x3F2060 ->
 // ADXT_SetOutVol (0x32A9F0) / func_0032EC78 per channel. Music streams are the cSndBgmNode pool inside cSnd
 // (0x601180, 16 nodes of 0xDC bytes; decomp cSnd.h); for those the volume is made 0 at both functions' entry
-// (table[0] = -96.0 dB, silent). Voices and sound effects are other node types; movies use Sofdec's own ADXT handles.
+// (table[0] = -96.0 dB, silent), except bank 1, the cutscene streams (their voices are in the same stream).
+// Voices and sound effects are other node types; movies use Sofdec's own ADXT handles.
 // GODHAND_TRACE=GAME logs the first calls (node, vtable, category, volume) to check the match.
 #include "godhand/game_options.h"
 #include "godhand/log.h"
@@ -40,9 +41,19 @@ namespace godhand
         // Before the first instruction of func_00373FF0 (the stream volume setter).
         void muteMusicVolume(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            (void)rdram;
             const uint32_t node = GPR_U32(ctx, 4);
-            const bool music = node >= kBgmPool && node < kBgmPool + kBgmNodeSize * kBgmNodeCount;
+            bool music = node >= kBgmPool && node < kBgmPool + kBgmNodeSize * kBgmNodeCount &&
+                         (node - kBgmPool) % kBgmNodeSize == 0u;
+            if (music)
+            {
+                // Cutscene streams are BGM nodes too: bank 1 (stored biased, 0x81 at +0x8C), started per cut by
+                // cSnd_BgmEvCutSet from the event's bgm data. They carry the cutscene's voices and effects mixed
+                // with its music, so they stay; the stage, boss, menu and minigame music (bank 0) is muted.
+                int32_t bank = 0;
+                std::memcpy(&bank, rdram + node + 0x8Cu, sizeof(bank));
+                if (bank - 0x80 == 1)
+                    music = false;
+            }
             static int logged = 0;
             if (logged < 40)
             {

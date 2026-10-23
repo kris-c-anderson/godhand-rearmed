@@ -32,6 +32,7 @@ namespace pcsx2gs
 #include <cinttypes>
 #include <condition_variable>
 #include <cstdlib>
+#include <algorithm>
 #include <cstring>
 #include <deque>
 #include <functional>
@@ -152,6 +153,11 @@ namespace GSTextureReplacements
 
 	/// Lookup map of texture names to replacement data which has been cached.
 	static std::unordered_map<TextureName, ReplacementTexture> s_replacement_texture_cache;
+
+	/// pcsx2gs: names whose original texture has one uniform alpha, and that alpha (MatchOriginalAlpha).
+	static std::unordered_map<TextureName, u8> s_original_alpha;
+	static void ForceAlpha(ReplacementTexture& rtex, u8 alpha);
+	static void ApplyOriginalAlpha(const TextureName& name, ReplacementTexture& rtex);
 	static std::mutex s_replacement_texture_cache_mutex;
 
 	/// List of textures that are pending asynchronous load. Second element is whether we're only precaching.
@@ -413,6 +419,7 @@ void GSTextureReplacements::ReloadReplacementMap()
 
 		std::unique_lock<std::mutex> lock(s_replacement_texture_cache_mutex);
 		s_replacement_texture_cache.clear();
+		s_original_alpha.clear();
 		s_pending_async_load_textures.clear();
 		s_async_loaded_textures.clear();
 	}
@@ -584,6 +591,7 @@ GSTexture* GSTextureReplacements::LookupReplacementTexture(const GSTextureCache:
 		if (it != s_replacement_texture_cache.end())
 		{
 			// replacement is cached, can immediately upload to host GPU
+			ApplyOriginalAlpha(name, it->second);
 			*alpha_minmax = it->second.alpha_minmax;
 			return CreateReplacementTexture(it->second, mipmap);
 		}
@@ -608,7 +616,8 @@ GSTexture* GSTextureReplacements::LookupReplacementTexture(const GSTextureCache:
 
 		// insert into cache
 		std::unique_lock<std::mutex> lock(s_replacement_texture_cache_mutex);
-		const ReplacementTexture& rtex = s_replacement_texture_cache.emplace(name, std::move(replacement.value())).first->second;
+		ReplacementTexture& rtex = s_replacement_texture_cache.emplace(name, std::move(replacement.value())).first->second;
+		ApplyOriginalAlpha(name, rtex);
 
 		// and upload to gpu
 		*alpha_minmax = rtex.alpha_minmax;
@@ -748,32 +757,6 @@ std::optional<GSTextureReplacements::ReplacementTexture> GSTextureReplacements::
 		}
 	}
 
-	// pcsx2gs (God Hand port): replacement packs made from PCSX2 dumps and resampled carry alpha 126..129 where the
-	// game's texture is exactly 0x80 (opaque): the GS alpha test God Hand's characters use (ATST GREATER, AREF 0x7F,
-	// AFAIL FB_ONLY) then fails on those texels and they are drawn without depth, so later draws show through them.
-	// Snap 120..136 back to 128 (PS2X_PCSX2_SNAP_ALPHA=0 turns it off).
-	{
-		static const bool snap = [] { const char* v = std::getenv("PS2X_PCSX2_SNAP_ALPHA"); return !(v && *v == '0'); }();
-		if (snap && rtex.format == GSTexture::Format::Color)
-		{
-			const auto fix = [](std::vector<u8>& data, u32 width, u32 height, u32 pitch) {
-				for (u32 y = 0; y < height; y++)
-				{
-					u8* row = data.data() + static_cast<size_t>(y) * pitch;
-					for (u32 x = 0; x < width; x++)
-					{
-						u8& a = row[x * 4 + 3];
-						if (a >= 120 && a <= 136)
-							a = 128;
-					}
-				}
-			};
-			fix(rtex.data, rtex.width, rtex.height, rtex.pitch);
-			for (auto& mip : rtex.mips)
-				fix(mip.data, mip.width, mip.height, mip.pitch);
-		}
-	}
-
 	SetReplacementTextureAlphaMinMax(rtex);
 
 	// pcsx2gs (God Hand port): note when a host folder's texture is used (pcsx2gs::ExtraTextureFolders).
@@ -825,7 +808,7 @@ void GSTextureReplacements::QueueAsyncReplacementTextureLoad(const TextureName& 
 		// insert into the cache and queue for later injection
 		if (replacement.has_value())
 		{
-			s_replacement_texture_cache.emplace(name, std::move(replacement.value()));
+			ApplyOriginalAlpha(name, s_replacement_texture_cache.emplace(name, std::move(replacement.value())).first->second);
 			s_async_loaded_textures.emplace_back(name, mipmap);
 		}
 		else
@@ -864,6 +847,80 @@ void GSTextureReplacements::ClearReplacementTextures()
 	s_replacement_texture_cache.clear();
 	s_pending_async_load_textures.clear();
 	s_async_loaded_textures.clear();
+}
+
+void GSTextureReplacements::ForceAlpha(ReplacementTexture& rtex, u8 alpha)
+{
+	const auto fill = [alpha, &rtex](std::vector<u8>& data, u32 width, u32 height, u32 pitch) {
+		switch (rtex.format)
+		{
+			case GSTexture::Format::Color:
+				for (u32 y = 0; y < height; y++)
+				{
+					u8* row = data.data() + static_cast<size_t>(y) * pitch;
+					for (u32 x = 0; x < width; x++)
+						row[x * 4 + 3] = alpha;
+				}
+				break;
+			case GSTexture::Format::BC3:
+				// each 16-byte block starts with its alpha block: two endpoints and 3-bit indices
+				for (size_t i = 0; i + 16 <= data.size(); i += 16)
+				{
+					data[i] = alpha;
+					data[i + 1] = alpha;
+					std::memset(&data[i + 2], 0, 6);
+				}
+				break;
+			case GSTexture::Format::BC2:
+			{
+				// explicit 4-bit alpha (value * 17): the nearest step at or above the target
+				const u8 nibble = static_cast<u8>(std::min(15, (alpha + 16) / 17));
+				for (size_t i = 0; i + 16 <= data.size(); i += 16)
+					std::memset(&data[i], nibble | (nibble << 4), 8);
+				break;
+			}
+			default:
+				break; // BC1/BC7: left as they are
+		}
+	};
+	fill(rtex.data, rtex.width, rtex.height, rtex.pitch);
+	for (auto& mip : rtex.mips)
+		fill(mip.data, mip.width, mip.height, mip.pitch);
+	rtex.forced_alpha = alpha;
+	SetReplacementTextureAlphaMinMax(rtex);
+}
+
+void GSTextureReplacements::ApplyOriginalAlpha(const TextureName& name, ReplacementTexture& rtex)
+{
+	// with s_replacement_texture_cache_mutex held
+	const auto it = s_original_alpha.find(name);
+	if (it == s_original_alpha.end() || rtex.forced_alpha == it->second)
+		return;
+	const std::pair<u8, u8> before = rtex.alpha_minmax;
+	ForceAlpha(rtex, it->second);
+	if (before.first != it->second || before.second != it->second)
+	{
+		static u32 s_count = 0;
+		if (++s_count <= 64)
+			std::fprintf(stderr, "[pcsx2-gs] HD texture %016llx-%016llx: alpha %u..%u set to the game's %u (%u so far)\n",
+				static_cast<unsigned long long>(name.TEX0Hash), static_cast<unsigned long long>(name.CLUTHash), before.first,
+				before.second, it->second, s_count);
+	}
+}
+
+void GSTextureReplacements::MatchOriginalAlpha(const GSTextureCache::HashCacheKey& hash, u8 alpha)
+{
+	static const bool enabled = [] { const char* v = std::getenv("PS2X_PCSX2_MATCH_ALPHA"); return !(v && v[0] == '0'); }();
+	if (!enabled)
+		return;
+	const TextureName name(CreateTextureName(hash, 0));
+	if (s_replacement_texture_filenames.find(name) == s_replacement_texture_filenames.end())
+		return;
+	std::unique_lock<std::mutex> lock(s_replacement_texture_cache_mutex);
+	s_original_alpha[name] = alpha;
+	const auto it = s_replacement_texture_cache.find(name);
+	if (it != s_replacement_texture_cache.end())
+		ApplyOriginalAlpha(name, it->second);
 }
 
 GSTexture* GSTextureReplacements::CreateReplacementTexture(const ReplacementTexture& rtex, bool mipmap)

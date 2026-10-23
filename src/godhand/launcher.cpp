@@ -554,8 +554,8 @@ namespace godhand::launcher
                         settingLabel("Unlock Hard", "Hard can be picked from the start instead of after a clear. Your "
                                                     "save is not changed.");
                         iniCheckbox(state, "On##hard", "Game", "UnlockHard", false);
-                        settingLabel("Mute music", "The game's music plays silent. Voices, sound effects and movies are "
-                                                   "unchanged.");
+                        settingLabel("Mute music", "Stage, boss, menu and minigame music plays silent. Cutscenes keep "
+                                                   "their sound (their music and voices are one track).");
                         iniCheckbox(state, "On##music", "Sound", "MuteMusic", false);
                         ImGui::EndTable();
                     }
