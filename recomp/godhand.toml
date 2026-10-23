@@ -131,6 +131,13 @@ address = "0x00145308"
 hook = "gh_roulette_seen"
 flag = "frame_hook"
 
+# The roulette wheel's cursor (cCockRoulette, addiu v1,v1,1 on +0x422): up (stick or d-pad) steps back instead.
+[[patches.hooks]]
+address = "0x001458CC"
+hook = "gh_roulette_step"
+flag = "frame_hook"
+replace = true
+
 # Roulette TIME dial (cCockRoulette move, addiu v0,v0,-1 on +0x4D0, 95 frames): counts with the timer above.
 [[patches.hooks]]
 address = "0x0014530C"

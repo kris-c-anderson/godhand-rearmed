@@ -251,6 +251,13 @@ namespace godhand::hud
                 dumpPrim(tag, caller, x0, x1, y0, y1, "menu", none);
                 return;
             }
+            // Screen-edge overlays (the low-health red corners): drawn from the screen's edge, they belong to the edge,
+            // so they stay stretched with it; narrowed they left angled stripes short of the corners.
+            if (x0 <= 1.0f || x1 >= width - 1.0f)
+            {
+                dumpPrim(tag, caller, x0, x1, y0, y1, "edge", none);
+                return;
+            }
             float anchor;
             if (g_ctx.active)
             {
@@ -261,7 +268,7 @@ namespace godhand::hud
             {
                 if (!g_inIdTrans)
                     noteLoose(caller, x0, x1, y0, y1);
-                anchor = 0.5f * width; // menus and everything else: the PS2's 4:3 layout, in the middle
+                anchor = 0.5f * width; // everything else: the PS2's 4:3 layout, in the middle
             }
             dumpPrim(tag, caller, x0, x1, y0, y1, g_ctx.active ? "hud" : "centred", anchor);
             (void)none;

@@ -116,6 +116,18 @@ namespace godhand
 
         void rouletteSeen(uint8_t *, R5900Context *, PS2Runtime *) { g_rouletteSeen = g_gameFrame; }
 
+        // Replaces addiu v1,v1,1 at 0x1458CC (cCockRoulette, the wheel's move: any of its command bits advances the
+        // cursor +0x422 by one, wrapping at the count in $a0). Pushing up (stick or d-pad) goes back one instead, so
+        // an overshot move is one step away, not a whole lap.
+        void rouletteStep(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const int32_t cursor = GPR_S32(ctx, 3), count = GPR_S32(ctx, 4);
+            uint16_t buttons = 0;
+            std::memcpy(&buttons, &ram8(rdram, kPadButtons), sizeof(buttons));
+            const bool up = (buttons & 0x10u) != 0u || ram8(rdram, kStickBytes[1]) < 0x40u;
+            SET_GPR_S32(ctx, 3, up && count > 0 ? (cursor + count - 1) % count : cursor + 1);
+        }
+
         void rouletteDpad(uint8_t *rdram)
         {
             if (g_rouletteSeen == 0u || g_gameFrame - g_rouletteSeen > 2u)
@@ -303,6 +315,7 @@ namespace godhand
         ps2xRegisterHostHook("gh_fps60_roulette_timer", &rouletteTimer);
         ps2xRegisterHostHook("gh_fps60_roulette_dial", &rouletteDial);
         ps2xRegisterHostHook("gh_roulette_seen", &rouletteSeen);
+        ps2xRegisterHostHook("gh_roulette_step", &rouletteStep);
         ps2xRegisterHostHook("gh_fps60_ui_anim", &uiAnimStep);
         ps2xRegisterHostHook("gh_fps60_button_timer", &buttonTimer);
         ps2xRegisterHostHook("gh_fps60_wiggle_begin", &wiggleBegin);
