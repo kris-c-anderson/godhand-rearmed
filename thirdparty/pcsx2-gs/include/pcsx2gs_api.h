@@ -31,7 +31,9 @@ typedef struct Pcsx2GsOpenParams
     //   blending=0..5 (minimum ... maximum),
     //   texture_dir=<folder holding replacements/> (HD textures, PCSX2's names and formats: PNG, DDS),
     //   texture_precache=0/1 (load all of them at start instead of as the game uses them),
-    //   aspect=<width/height> (the picture's shape when the game renders widescreen itself, e.g. 1.7778)
+    //   aspect=<width/height> (the picture's shape when the game renders widescreen itself, e.g. 1.7778),
+    //   native_scaling=ps2 (the game's fix: post effects at the PS2's resolution) / upscaled / off / normal /
+    //   normal_upscaled or 0..4, half_pixel_offset=0..5 (the game's fix is 2)
     const char *options;
 } Pcsx2GsOpenParams;
 

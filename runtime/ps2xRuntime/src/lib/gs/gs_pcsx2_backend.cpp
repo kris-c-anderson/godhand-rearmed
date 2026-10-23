@@ -352,6 +352,8 @@ bool GSPcsx2Backend::EnsureOpen()
         {"PS2X_PCSX2_BLENDING", "blending", nullptr},
         {"PS2X_PCSX2_TEXTURE_PRECACHE", "texture_precache", nullptr},
         {"PS2X_PCSX2_ASPECT", "aspect", nullptr},
+        {"PS2X_PCSX2_NATIVE_SCALING", "native_scaling", nullptr},     // post effects: ps2 (God Hand's fix) / upscaled / off
+        {"PS2X_PCSX2_HALF_PIXEL_OFFSET", "half_pixel_offset", nullptr}, // dev: 0..5, God Hand's fix is 2
     };
     std::string options;
     for (const auto &option : kOptions)

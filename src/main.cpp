@@ -373,6 +373,7 @@ namespace
         {"video", "hudlayout", "GODHAND_HUD"},
         {"video", "menulayout", "GODHAND_MENUS"},
         {"video", "startfullscreen", "GODHAND_START_FULLSCREEN"},
+        {"video", "posteffects", "PS2X_PCSX2_NATIVE_SCALING"},
         {"launcher", "show", "GODHAND_LAUNCHER"},
     };
 

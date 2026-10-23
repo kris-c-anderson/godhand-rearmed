@@ -38,6 +38,7 @@ namespace godhand::launcher
         constexpr Choice kHudLayouts[] = {{"16:9: HUD at the screen edges", "16:9"}, {"4:3: HUD where the PS2 had it", "4:3"}};
         constexpr Choice kMenuLayouts[] = {{"4:3: as on the PS2, with side bars", "4:3"}, {"Stretched to the screen", "stretch"}};
         constexpr Choice kRouletteTimers[] = {{"Normal", "normal"}, {"Double time", "double"}};
+        constexpr Choice kPostEffects[] = {{"PS2 resolution (PCSX2's fix)", "ps2"}, {"Upscaled", "upscaled"}, {"No fix", "off"}};
         constexpr Choice kWindowModes[] = {{"Window", "window"}, {"Fullscreen (borderless)", "fullscreen"}, {"Maximized window", "maximized"}};
         constexpr Choice kWindowSizes[] = {{"Automatic (3/4 of the screen)", "auto"}, {"PS2 size", "native"}};
         constexpr Choice kResolutions[] = {{"1x  native (512x448)", "1"}, {"2x  1024x896", "2"}, {"3x  1536x1344", "3"},
@@ -505,6 +506,11 @@ namespace godhand::launcher
                                                             "up a 4K one; higher costs more GPU time.");
                         iniCombo(state, "##scale", "Video", "InternalResolution", "3",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kResolutions, value); });
+                        settingLabel("Post effects", "The blur effects (depth of field, heat haze) are drawn from small "
+                                                     "copies of the frame. PS2 resolution keeps them aligned but grainy "
+                                                     "at high internal resolutions; Upscaled draws them sharp.");
+                        iniCombo(state, "##posteffects", "Video", "PostEffects", "ps2",
+                                 [](const char *id, std::string &value) { return choiceCombo(id, kPostEffects, value); });
                         settingLabel("HD texture pack", "Replacement textures in PCSX2's format.");
                         iniCheckbox(state, "Use replacement textures##tex", "Runtime", "PS2X_PCSX2_TEXTURES", true);
                         settingLabel("Texture pack folder", "The folder that holds replacements/. Empty: textures/SLUS-21503 "

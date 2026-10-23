@@ -8,6 +8,7 @@
 #include "GS/Renderers/DX11/GSDevice11.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -34,6 +35,13 @@ namespace
     {
         options.UserHacks_HalfPixelOffset = GSHalfPixelOffset::Special;
         options.UserHacks_NativeScaling = GSNativeScaling::Aggressive;
+    }
+
+    std::string lower(std::string text)
+    {
+        for (char &c : text)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return text;
     }
 
     // Pcsx2GsOpenParams::options: "key=value;key=value".
@@ -124,6 +132,29 @@ namespace
                 options.PrecacheTextureReplacements = value != 0;
             else if (key == "blending")
                 options.AccurateBlendingUnit = static_cast<AccBlendLevel>(std::clamp(value, 0, 5));
+            else if (key == "native_scaling")
+            {
+                // The game's post effects (depth of field, the heat haze) are drawn from downscaled copies of the
+                // frame. PCSX2's God Hand fix ("ps2", Aggressive) draws those copies at the PS2's resolution, which
+                // keeps them aligned but leaves the blur grainy at high internal resolutions; "upscaled"
+                // (AggressiveUpscaled) keeps the copies at the internal resolution where the draw is a plain blend;
+                // "off" leaves everything upscaled (the effects may misalign). Numbers are PCSX2's own enum.
+                const std::string word = lower(text);
+                if (word == "off")
+                    options.UserHacks_NativeScaling = GSNativeScaling::Off;
+                else if (word == "ps2" || word == "native")
+                    options.UserHacks_NativeScaling = GSNativeScaling::Aggressive;
+                else if (word == "upscaled")
+                    options.UserHacks_NativeScaling = GSNativeScaling::AggressiveUpscaled;
+                else if (word == "normal")
+                    options.UserHacks_NativeScaling = GSNativeScaling::Normal;
+                else if (word == "normal_upscaled")
+                    options.UserHacks_NativeScaling = GSNativeScaling::NormalUpscaled;
+                else
+                    options.UserHacks_NativeScaling = static_cast<GSNativeScaling>(std::clamp(value, 0, 4));
+            }
+            else if (key == "half_pixel_offset")
+                options.UserHacks_HalfPixelOffset = static_cast<GSHalfPixelOffset>(std::clamp(value, 0, 5)); // 2 = God Hand's fix
         }
     }
 
