@@ -679,7 +679,10 @@ int main(int argc, char *argv[])
 #endif
     godhand::log::configureFromEnvironment();
     if (!headless)
+    {
         godhand::reportPreviousCrashes();
+        godhand::startWindowWatch();
+    }
     for (const std::string &note : settingNotes)
         GH_INFO(Boot, "settings: " << note);
     if (!padLayout.empty())

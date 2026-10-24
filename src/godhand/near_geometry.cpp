@@ -14,7 +14,7 @@
 //    plane. Patched in VU1 micro memory as each upload lands (ps2x::vu1hooks upload hook), and in the uploads the
 //    build compiles ahead of time (build.py vu writes patched copies, *_nearclip.bin), so the compiled code matches.
 // 2. Every PATH1 packet from those renderers goes through a filter here before the GS (the others, which clip by
-//    themselves, are left alone: VU1 says where the run that kicked a packet started). A triangle the GS cannot take
+//    themselves, are left alone: VU1 says which XGKICK sent each packet). A triangle the GS cannot take
 //    (a corner outside the 16-bit range, or behind the camera) gets ADC in the packet and is cut by us instead, from
 //    the full positions:
 //    the VU writes 32-bit integers into the packet's X, Y and Z words and the GS only keeps 16 (Y, X) or 24 bits (Z),
@@ -444,14 +444,14 @@ namespace godhand
         int32_t s32(uint32_t value) { return static_cast<int32_t>(value); }
 
         // The batch's input for this packet (its stitch flags), when a known renderer layout matches.
-        // programPc: where the VU1 run that kicked the packet started (bytes), inside the program that kicked it.
+        // kickPc: the address of the XGKICK that sent the packet (bytes), inside the program that sent it.
         bool findInput(const uint8_t *packet, uint32_t size, uint32_t sourceAddress, const uint8_t *vuData, uint32_t vuDataSize,
-                       uint32_t programPc, uint32_t &inputQw, uint32_t &stride)
+                       uint32_t kickPc, uint32_t &inputQw, uint32_t &stride)
         {
             const uint32_t qwords = vuDataSize / 16u;
             if (qwords == 0u || size < 16u)
                 return false;
-            const uint32_t value = g_programLayout[(programPc / 8u) % g_programLayout.size()];
+            const uint32_t value = g_programLayout[(kickPc / 8u) % g_programLayout.size()];
             if (!value)
                 return false; // not one of the patched renderers
             const uint32_t out = sourceAddress / 16u;
@@ -468,17 +468,20 @@ namespace godhand
         thread_local bool t_primKnown = false;
 
         void path1Filter(uint8_t *packet, uint32_t size, uint32_t sourceAddress, const uint8_t *vuData, uint32_t vuDataSize,
-                         uint32_t programPc, std::vector<uint8_t> &extra)
+                         uint32_t kickPc, std::vector<uint8_t> &extra)
         {
             // The other renderers (the big ones, 2D, effects) are left as the PS2 has them: their clip tests were not
-            // changed, and the big ones redraw what they skip as clipped fans of their own.
-            if (!g_programPatched[(programPc / 8u) % g_programPatched.size()])
+            // changed, and the big ones redraw what they skip as clipped fans of their own. By the XGKICK's own address:
+            // the start of the VU1 run is not enough (the renderers end with [E] and a branch back to their top, and
+            // the game goes on with MSCNT there, outside the program as the [E] bits split it: the patched renderers'
+            // packets went to the GS untouched, wrapped triangles across the screen; Oct 2026, gif_8136).
+            if (!g_programPatched[(kickPc / 8u) % g_programPatched.size()])
                 return;
             thread_local std::vector<Cut> poly, scratch;
             Out out{extra};
             TagInfo outTag{};
             uint32_t inputQw = 0, stride = 0;
-            const bool haveInput = findInput(packet, size, sourceAddress, vuData, vuDataSize, programPc, inputQw, stride);
+            const bool haveInput = findInput(packet, size, sourceAddress, vuData, vuDataSize, kickPc, inputQw, stride);
             bool crossing = false;
             const uint32_t vuQwords = vuDataSize / 16u;
             bool firstTag = true;

@@ -4,6 +4,14 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 25, 2026
 
+- **Near geometry: no more streaked walls.** The previous build told the filter which program sent a packet by where
+  the VU1 run started; the scenery renderers end with [E] and a branch back to their top, and the game continues them
+  with MSCNT from there, so their packets counted as another program's and went to the GS uncut: triangles reaching
+  off the screen range wrapped across it (dump gif_8136: 23 such triangles drawn). The filter now gets the address of
+  the XGKICK itself (interpreter and ahead-of-time VU1 code; `build.py vu` regenerates it).
+- **"Not responding" watch:** the earlier silent "crashes" were hangs (Windows: "stopped responding and was closed"):
+  the window's thread stops taking messages while the game runs on. When the window has not answered for ~7 s, every
+  thread's native stack is written to the log once (`hang:` lines).
 - **Near geometry: floors no longer flicker.** The filter also cut triangles from the game's big renderers, which clip
   by themselves: a triangle they skip near the camera they draw again as a clipped fan. The cut copy and the fan lay on
   the same floor and fought in depth ("shadows" flickering in and out; dump gif_1652). Only packets from the renderers

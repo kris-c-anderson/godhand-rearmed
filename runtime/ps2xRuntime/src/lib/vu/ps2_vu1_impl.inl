@@ -970,7 +970,7 @@ inline void VU1Interpreter::finishXgkick()
     extra.clear();
     if (const ps2x::vu1hooks::Path1Filter filter = ps2x::vu1hooks::path1Filter(); filter && m_activeVuData)
         filter(m_xgkick.packet.data(), m_xgkick.totalBytes, m_xgkick.sourceAddress, m_activeVuData, m_activeVuDataSize,
-               m_runStartPc, extra);
+               m_xgkick.kickPc, extra);
     if (m_activeMemory)
     {
         m_activeMemory->submitGifPacket(GifPathId::Path1, m_xgkick.packet.data(), m_xgkick.totalBytes);
@@ -998,7 +998,7 @@ inline void VU1Interpreter::resetXgkick()
     m_xgkick.currentTagEop = false;
 }
 
-inline void VU1Interpreter::startXgkick(uint32_t qwordAddress)
+inline void VU1Interpreter::startXgkick(uint32_t qwordAddress, uint32_t kickPc)
 {
     if (m_unit != Unit::VU1 || !m_activeVuData || m_activeVuDataSize < 16u)
         return;
@@ -1007,6 +1007,7 @@ inline void VU1Interpreter::startXgkick(uint32_t qwordAddress)
     resetXgkick();
     m_xgkick.active = true;
     m_xgkick.sourceAddress = sourceAddress;
+    m_xgkick.kickPc = kickPc;
     m_xgkick.cycleCredit = 1u; // XGKICK's issue cycle counts toward PATH1.
     m_xgkick.issueCycle = m_cycle;
 }
@@ -2294,7 +2295,7 @@ inline void VU1Interpreter::execLower(uint32_t instr, uint8_t *vuData, uint32_t 
                 return;
             }
             case 0x6C: // XGKICK - send GIF packet from VU1 data memory
-                startXgkick(static_cast<uint32_t>(static_cast<uint16_t>(m_state.vi[viS])));
+                startXgkick(static_cast<uint32_t>(static_cast<uint16_t>(m_state.vi[viS])), m_state.pc);
                 return;
             case 0x70: // ESADD
             {
@@ -3794,10 +3795,10 @@ struct VU1InterpreterAccess
         return true;
     }
 
-    static VU1_FORCE_INLINE void xgkickStart(VU1Interpreter &vu, Vu1FastCtx &ctx, uint64_t cycle, int32_t vi)
+    static VU1_FORCE_INLINE void xgkickStart(VU1Interpreter &vu, Vu1FastCtx &ctx, uint64_t cycle, int32_t vi, uint32_t pc)
     {
         vu.m_cycle = cycle;
-        vu.startXgkick(static_cast<uint32_t>(static_cast<uint16_t>(vi)));
+        vu.startXgkick(static_cast<uint32_t>(static_cast<uint16_t>(vi)), pc);
         ctx.xgkickDone = cycle;
     }
 

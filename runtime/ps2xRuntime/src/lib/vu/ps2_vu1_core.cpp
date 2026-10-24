@@ -1535,7 +1535,6 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
                          uint8_t *vuData, uint32_t dataSize,
                          GS &gs, PS2Memory *memory, uint32_t maxCycles)
 {
-    m_runStartPc = m_state.pc;
     if (m_unit == Unit::VU1)
     {
         captureVu1Program(vuCode, codeSize, memory, m_state.pc);

@@ -18,10 +18,10 @@ namespace ps2x::vu1hooks
 
     // A finished XGKICK packet, before it goes to the GS: packet may be changed in place (same size); extra = GIF
     // packets to send right after it (left empty: none). sourceAddress = where in VU1 data memory the packet was
-    // read from (bytes); vuData = VU1 data memory as it is now; programPc = the micro-memory byte address the VU1 run
-    // that kicked it started at (MSCAL / MSCNT), which tells the program apart.
+    // read from (bytes); vuData = VU1 data memory as it is now; kickPc = the micro-memory byte address of the XGKICK
+    // that sent it, which tells the program apart.
     using Path1Filter = void (*)(uint8_t *packet, uint32_t size, uint32_t sourceAddress, const uint8_t *vuData,
-                                 uint32_t vuDataSize, uint32_t programPc, std::vector<uint8_t> &extra);
+                                 uint32_t vuDataSize, uint32_t kickPc, std::vector<uint8_t> &extra);
     void setPath1Filter(Path1Filter filter);
     [[nodiscard]] Path1Filter path1Filter();
 }

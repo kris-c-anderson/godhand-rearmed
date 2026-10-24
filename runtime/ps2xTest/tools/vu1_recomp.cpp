@@ -722,7 +722,7 @@ namespace
             viSet(it, "vu.m_state.itop & 0x3FFu");
             return e;
         case 0x6C:
-            e.code = "xgkickStart(vu, ctx, cyc, " + vi(is) + ");";
+            e.code = "xgkickStart(vu, ctx, cyc, " + vi(is) + ", " + num(pc) + "u);";
             return e;
         case 0x7B:
             return e;

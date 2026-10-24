@@ -6,6 +6,7 @@
 // offset), which a normal user can read; so the next run reports them.
 #include "godhand/crash_history.h"
 #include "godhand/log.h"
+#include "godhand/hang_dump.h"
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -103,36 +104,6 @@ namespace godhand
             return nt->FileHeader.TimeDateStamp;
         }
 
-        // "function+0x.. file:line" for an offset into a module of this process, when it is the same build.
-        std::string symbolize(const std::wstring &moduleName, const std::wstring &moduleStamp, unsigned long long offset)
-        {
-            HMODULE module = GetModuleHandleW(moduleName.c_str());
-            if (!module)
-                return "(module not loaded now: not named)";
-            const unsigned long stamp = std::wcstoul(moduleStamp.c_str(), nullptr, 16);
-            if (stamp != imageTimeStamp(module))
-                return "(another build of the module: not named)";
-            HANDLE process = GetCurrentProcess();
-            const DWORD64 address = reinterpret_cast<DWORD64>(module) + offset;
-            alignas(SYMBOL_INFO) char storage[sizeof(SYMBOL_INFO) + 256] = {};
-            auto *symbol = reinterpret_cast<SYMBOL_INFO *>(storage);
-            symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
-            symbol->MaxNameLen = 255;
-            DWORD64 displacement = 0;
-            IMAGEHLP_LINE64 line{};
-            line.SizeOfStruct = sizeof(line);
-            DWORD lineDisplacement = 0;
-            if (!SymFromAddr(process, address, &displacement, symbol))
-                return "(no symbol)";
-            char text[600];
-            if (SymGetLineFromAddr64(process, address, &lineDisplacement, &line))
-                std::snprintf(text, sizeof(text), "%s+0x%llx %s:%lu", symbol->Name, static_cast<unsigned long long>(displacement),
-                              line.FileName, line.LineNumber);
-            else
-                std::snprintf(text, sizeof(text), "%s+0x%llx", symbol->Name, static_cast<unsigned long long>(displacement));
-            return text;
-        }
-
         void readHistory()
         {
             // The last three days, newest first.
@@ -144,9 +115,7 @@ namespace godhand
                 GH_INFO(Boot, "crash history: the Application event log could not be read (error " << GetLastError() << ")");
                 return;
             }
-            HANDLE process = GetCurrentProcess();
-            SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
-            const bool symbols = SymInitialize(process, nullptr, TRUE) != FALSE;
+            // No symbol lookup here: dbghelp is single-threaded and the PC sampler and crash reporter use it.
             int reported = 0, seen = 0;
             EVT_HANDLE events[16];
             DWORD returned = 0;
@@ -178,14 +147,15 @@ namespace godhand
                     }
                     const unsigned long code = std::wcstoul(data[6].c_str(), nullptr, 16);
                     const unsigned long long offset = std::wcstoull(data[7].c_str(), nullptr, 16);
-                    const std::string where = symbols ? symbolize(data[3], data[5], offset) : std::string("(no symbols)");
+                    const std::string where = _wcsicmp(data[3].c_str(), L"godhand.exe") == 0 &&
+                                                      std::wcstoul(data[5].c_str(), nullptr, 16) == imageTimeStamp(GetModuleHandleW(nullptr))
+                                                  ? "(this build)"
+                                                  : "(another build)";
                     GH_INFO(Boot, "crash history: " << narrow(time) << " UTC godhand.exe crashed: exception 0x" << std::hex << code
                                                     << std::dec << " " << codeMeaning(code) << " in " << narrow(data[3]) << "+0x"
                                                     << std::hex << offset << std::dec << " " << where);
                 }
             }
-            if (symbols)
-                SymCleanup(process);
             EvtClose(results);
             if (reported == 0)
                 GH_INFO(Boot, "crash history: no crash of godhand.exe in the last three days");
@@ -233,11 +203,59 @@ namespace godhand
             .detach();
     }
 
+    // Oct 2026: the "crashes" were hangs: Windows' records say "stopped responding" (the game window's thread stopped
+    // taking messages while the game itself ran on), and Kris closed them. Once the window has not answered for a few
+    // seconds, every thread's native stack goes to the log (hang_dump), once per hang.
+    void startWindowWatch()
+    {
+        std::thread([]
+                    {
+                        struct Find
+                        {
+                            DWORD pid;
+                            HWND hung;
+                        };
+                        int seconds = 0;
+                        for (;;)
+                        {
+                            std::this_thread::sleep_for(std::chrono::seconds(1));
+                            Find find{GetCurrentProcessId(), nullptr};
+                            EnumWindows([](HWND window, LPARAM param) -> BOOL
+                                        {
+                                            auto *f = reinterpret_cast<Find *>(param);
+                                            DWORD pid = 0;
+                                            GetWindowThreadProcessId(window, &pid);
+                                            if (pid == f->pid && IsWindowVisible(window) && IsHungAppWindow(window))
+                                            {
+                                                f->hung = window;
+                                                return FALSE;
+                                            }
+                                            return TRUE; },
+                                        reinterpret_cast<LPARAM>(&find));
+                            if (!find.hung)
+                            {
+                                if (seconds >= 2)
+                                    GH_WARN(Boot, "hang: the game window answers again after ~" << seconds + 5 << " s");
+                                seconds = 0;
+                                continue;
+                            }
+                            if (++seconds == 2)
+                            {
+                                const DWORD thread = GetWindowThreadProcessId(find.hung, nullptr);
+                                GH_WARN(Boot, "hang: the game window (thread " << thread
+                                                                               << ") has not taken messages for ~7 s; every thread's stack follows");
+                                godhand::hangdump::dumpNow(true);
+                            }
+                        } })
+            .detach();
+    }
+
     void installFatalExceptionLog()
     {
         AddVectoredExceptionHandler(0, &fatalExceptionHandler);
     }
 #else
+    void startWindowWatch() {}
     void reportPreviousCrashes() {}
     void installFatalExceptionLog() {}
 #endif

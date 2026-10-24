@@ -182,6 +182,7 @@ private:
         static constexpr uint32_t kBufferSize = 0x10000u;
         std::array<uint8_t, kBufferSize> packet{};
         uint32_t sourceAddress = 0;
+        uint32_t kickPc = 0; // micro-memory byte address of the XGKICK (the PATH1 filter, ps2_vu1_hooks.h)
         uint32_t totalBytes = 0;
         uint32_t copiedBytes = 0;
         uint32_t currentTagEnd = 0;
@@ -232,7 +233,6 @@ private:
     std::array<uint64_t, 4> m_accLatestWrite{};
 
     uint64_t m_cycle = 0;
-    uint32_t m_runStartPc = 0; // micro-memory address this run started at (the PATH1 filter, ps2_vu1_hooks.h)
     uint64_t m_nextWriteSequence = 0;
     uint64_t m_efuResourceReady = 0;
     uint32_t m_workingClip = 0;
@@ -282,7 +282,7 @@ private:
     void queueVfWrite(uint8_t reg, uint8_t laneMask, const float value[4], uint32_t latency);
     void queueViWrite(uint8_t reg, int32_t value, uint32_t latency);
     void queueAccWrite(uint8_t laneMask, const float value[4], uint32_t latency);
-    void startXgkick(uint32_t qwordAddress);
+    void startXgkick(uint32_t qwordAddress, uint32_t kickPc);
     void resetXgkick();
 
     void noteReadyCycle(uint64_t cycle)
