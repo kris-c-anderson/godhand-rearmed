@@ -359,6 +359,15 @@ namespace godhand
                 return;
             const double B = (v[i0]->z - v[i1]->z) / (static_cast<double>(v[i0]->q) - v[i1]->q);
             const double A = v[i0]->z - B * v[i0]->q;
+            // Fog of a corner behind the camera is garbage (the VU's fog is computed from its depth, then clamped):
+            // it takes the fog of the nearest corner in front instead, so the cut piece does not darken.
+            double nearFog = 0.0, nearQ = -1.0;
+            for (const Vertex *p : v)
+                if (p->q > 0.0f && p->q > nearQ)
+                {
+                    nearQ = p->q;
+                    nearFog = p->f;
+                }
             poly.clear();
             for (const Vertex *p : v)
             {
@@ -368,7 +377,8 @@ namespace godhand
                 k.y = (static_cast<double>(p->y) / 16.0 - 2048.0) * k.w;
                 k.s = p->s / p->q; // true texture coordinates
                 k.t = p->t / p->q;
-                k.r = p->r; k.g = p->g; k.b = p->b; k.a = p->a; k.f = p->f; k.u = p->u; k.v = p->v;
+                k.r = p->r; k.g = p->g; k.b = p->b; k.a = p->a; k.u = p->u; k.v = p->v;
+                k.f = p->q > 0.0f ? p->f : nearFog;
                 poly.push_back(k);
             }
             clipAgainst(poly, scratch, [](const Cut &k) { return k.w - kNear; });

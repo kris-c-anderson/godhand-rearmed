@@ -244,6 +244,14 @@ hook = "gh_cam_distance"
 flag = "fov"
 replace = true
 
+# The game's own wall hiding (func_00307B28, the hide-model manager): each update it shows again every mesh it hid,
+# casts rays from the camera to Gene (and to either side of him) and hides every mesh a ray hits (+0x380 |= 1). With
+# the see-through oval on (camera.cpp, flag "keep_walls") the meshes stay: ori v0,v0,0x1 -> ori v0,v0,0x0.
+[[patches.conditional]]
+address = "0x00308650"
+value = "0x34420000"
+flag = "keep_walls"
+
 # The radar's turn (func_00143D20, lqc2 $vf4,128(sp): Gene's rotation copied there): the Modern free camera's yaw while
 # it has the view (camera.cpp).
 [[patches.hooks]]

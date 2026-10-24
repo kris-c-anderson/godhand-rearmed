@@ -296,9 +296,24 @@ namespace godhand
             g_seeSent = false;
         }
 
+        // The game hides whole walls and pillars that come between the camera and Gene (func_00307B28: rays from the
+        // camera to him, every mesh hit hidden for the frame). The oval replaces that: while it is on, the meshes stay
+        // (toml patch at 0x308650, flag "keep_walls"), and they dissolve round him instead.
+        bool g_keepWallsSet = false, g_keepWalls = false;
+        void updateKeepWalls()
+        {
+            const bool want = g_seeThrough.load(std::memory_order_relaxed);
+            if (g_keepWallsSet && want == g_keepWalls)
+                return;
+            g_keepWallsSet = true;
+            g_keepWalls = want;
+            ps2xSetPatchFlag("keep_walls", want);
+        }
+
         // 0x1388F0 (cCamera_update, lui at,0x4233 after MtxMultiply; s4 = the camera)
         void cameraMatrixReady(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
+            updateKeepWalls();
             const uint32_t camera = GPR_U32(ctx, 20);
             if (camera != g_playerCamera.load(std::memory_order_relaxed))
                 return;
@@ -718,6 +733,7 @@ namespace godhand
         ps2xRegisterHostHook("gh_em_wedge", &enemyWedge);
         ps2xRegisterHostHook("gh_em_lunge", &enemyLunge);
         ps2xSetPatchFlag("fov", true);
+        ps2xSetPatchFlag("keep_walls", g_seeThrough.load());
         ps2xSetPatchFlag("enemy_view", true);
         GH_INFO(Game, "camera: field of view " << g_fovPercent.load() << "%, " << g_fightPercent.load()
                                                << "% in fights; comes in " << g_closerPercent.load() << "%, tilt "

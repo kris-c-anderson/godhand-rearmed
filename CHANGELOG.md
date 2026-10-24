@@ -4,6 +4,13 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 24, 2026
 
+- **Walls stay, the oval dissolves them:** the walls that vanished whole near the camera were the game's own doing: its
+  hide-model manager (func_00307B28) casts rays from the camera to Gene and to either side of him every update and hides
+  every mesh a ray hits. With the see-through oval on, that hiding is off (patch at 0x308650, flag `keep_walls`,
+  switched live with the oval) and the walls dissolve round Gene instead; with the oval off, the game hides them as
+  on the PS2.
+- **Near geometry:** a corner behind the camera has a garbage fog value (computed from its depth, then clamped); cut
+  pieces now take the nearest corner's fog in front, so floors near the camera no longer flicker darker.
 - **Near geometry** (`[Video] NearGeometry`, on; launcher Graphics; read at start): walls, pillars and floors next to
   the camera are drawn instead of vanishing. The PS2 cannot draw a triangle with a corner off its 16-bit screen range or
   behind the camera, so the game's scenery renderers drop such triangles whole, and a wall the camera comes close to
