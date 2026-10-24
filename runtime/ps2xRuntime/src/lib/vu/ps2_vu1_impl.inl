@@ -966,19 +966,24 @@ inline void VU1Interpreter::finishXgkick()
         }
     }
     // The game's PATH1 filter (ps2_vu1_hooks.h): may change the packet in place and add packets after it.
-    thread_local std::vector<uint8_t> extra;
+    thread_local std::vector<uint8_t> before, extra;
+    before.clear();
     extra.clear();
     if (const ps2x::vu1hooks::Path1Filter filter = ps2x::vu1hooks::path1Filter(); filter && m_activeVuData)
         filter(m_xgkick.packet.data(), m_xgkick.totalBytes, m_xgkick.sourceAddress, m_activeVuData, m_activeVuDataSize,
-               m_xgkick.kickPc, extra);
+               m_xgkick.kickPc, before, extra);
     if (m_activeMemory)
     {
+        if (!before.empty())
+            m_activeMemory->submitGifPacket(GifPathId::Path1, before.data(), static_cast<uint32_t>(before.size()));
         m_activeMemory->submitGifPacket(GifPathId::Path1, m_xgkick.packet.data(), m_xgkick.totalBytes);
         if (!extra.empty())
             m_activeMemory->submitGifPacket(GifPathId::Path1, extra.data(), static_cast<uint32_t>(extra.size()));
     }
     else if (m_activeGs)
     {
+        if (!before.empty())
+            m_activeGs->processGIFPacket(before.data(), static_cast<uint32_t>(before.size()));
         m_activeGs->processGIFPacket(m_xgkick.packet.data(), m_xgkick.totalBytes);
         if (!extra.empty())
             m_activeGs->processGIFPacket(extra.data(), static_cast<uint32_t>(extra.size()));

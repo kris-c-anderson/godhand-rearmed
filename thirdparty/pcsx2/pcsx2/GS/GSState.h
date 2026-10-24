@@ -301,6 +301,7 @@ public:
 	bool m_texflush_flag = false;
 	bool m_isPackedUV_HackFlag = false;
 	bool m_channel_shuffle = false;
+	u32 m_gh_draw_class = 1; // pcsx2gs (God Hand): what the current PATH1 packets draw (GIFRegHandlerNOP); 1 until told
 	bool m_using_temp_z = false;
 	bool m_temp_z_full_copy = false;
 	bool m_in_target_draw = false;

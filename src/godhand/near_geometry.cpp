@@ -519,15 +519,36 @@ namespace godhand
         thread_local uint32_t t_prim = 0;   // PRIM as the GS has it (this thread's PATH1)
         thread_local bool t_primKnown = false;
 
-        void path1Filter(uint8_t *packet, uint32_t size, uint32_t sourceAddress, const uint8_t *vuData, uint32_t vuDataSize,
-                         uint32_t kickPc, std::vector<uint8_t> &extra)
+        // What a packet draws, for the GS's see-through oval (pcsx2gs GSState::GIFRegHandlerNOP, ApplySeeThrough):
+        // 1 = scenery (a patched renderer with a stitch layout: walls, pillars, the stage), 0 = everything else
+        // (characters, objects, effects: the big renderers and the two odd ones). Told to the GS by a NOP write
+        // carrying "GHSE" (nothing to the PS2) in front of the first packet of each run of one class: Gene's arms
+        // reaching towards the camera and the enemies between it and him were dissolved as "nearer than Gene", and
+        // they are what the oval is there to show (Kris, Oct 2026).
+        thread_local uint32_t t_lastClass = 0xFFFFFFFFu;
+        thread_local uint32_t t_sinceMark = 0;
+
+        void markClass(std::vector<uint8_t> &before, uint32_t cls)
         {
+            if (cls == t_lastClass && ++t_sinceMark < 2048u)
+                return; // repeated now and then anyway: a reopened GS starts over with class 1
+            t_lastClass = cls;
+            t_sinceMark = 0;
+            put64(before, 1u | (1ull << 15) | (1ull << 60), 0xEull);            // NLOOP 1, EOP, A+D
+            put64(before, (0x47485345ull << 32) | cls, 0x0F);                   // NOP: "GHSE" | class
+        }
+
+        void path1Filter(uint8_t *packet, uint32_t size, uint32_t sourceAddress, const uint8_t *vuData, uint32_t vuDataSize,
+                         uint32_t kickPc, std::vector<uint8_t> &before, std::vector<uint8_t> &extra)
+        {
+            const uint32_t pair = (kickPc / 8u) % kPairs;
+            markClass(before, g_programPatched[pair] && g_programLayout[pair] ? 1u : 0u);
             // The other renderers (the big ones, 2D, effects) are left as the PS2 has them: their clip tests were not
             // changed, and the big ones redraw what they skip as clipped fans of their own. By the XGKICK's own address:
             // the start of the VU1 run is not enough (the renderers end with [E] and a branch back to their top, and
             // the game goes on with MSCNT there, outside the program as the [E] bits split it: the patched renderers'
             // packets went to the GS untouched, wrapped triangles across the screen; Oct 2026, gif_8136).
-            if (!g_programPatched[(kickPc / 8u) % g_programPatched.size()])
+            if (!g_programPatched[pair])
                 return;
             thread_local std::vector<Cut> poly, scratch;
             Out out{extra};

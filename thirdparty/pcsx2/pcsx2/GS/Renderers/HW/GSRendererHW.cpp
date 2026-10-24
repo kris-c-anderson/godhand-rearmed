@@ -6019,6 +6019,11 @@ void GSRendererHW::ApplySeeThrough(float rtscale)
 		return;
 	if (GSLocalMemory::m_psm[m_cached_ctx.ZBUF.PSM].fmt != 2)
 		return;
+	// Only the scenery (the port marks each PATH1 packet's class, GSState::GIFRegHandlerNOP): Gene's arms reaching
+	// towards the camera and the enemies between it and him are nearer than him too, and they are what the oval is
+	// there to show (Kris, Oct 2026).
+	if (m_gh_draw_class != 1u)
+		return;
 	const float ox = static_cast<float>(m_context->XYOFFSET.OFX) / 16.0f;
 	const float oy = static_cast<float>(m_context->XYOFFSET.OFY) / 16.0f;
 	const float scale = std::max(rtscale, 0.01f);
