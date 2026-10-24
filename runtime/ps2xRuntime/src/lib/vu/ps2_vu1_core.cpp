@@ -1,3 +1,4 @@
+#include "runtime/ps2_vu1_hooks.h"
 #include "runtime/ps2_vu1.h"
 #include "runtime/gs/ps2_gif_arbiter.h"
 #include "runtime/gs/gs_frontend.h"
@@ -2006,6 +2007,27 @@ VU1InterpreterAccess::CompiledProgram findCompiledVu1ProgramByHash(uint64_t imag
 void registerVu1CompiledProgram(uint64_t imageHash, VU1InterpreterAccess::CompiledProgram program)
 {
     vu1CompiledRegistry().programs[imageHash] = program;
+}
+
+namespace ps2x::vu1hooks
+{
+    namespace
+    {
+        std::atomic<UploadHook> g_uploadHook{nullptr};
+        std::atomic<Path1Filter> g_path1Filter{nullptr};
+    }
+
+    void setUploadHook(UploadHook hook) { g_uploadHook.store(hook, std::memory_order_release); }
+
+    void runUploadHook(uint8_t *code, uint32_t codeSize, uint32_t byteAddress, uint32_t size)
+    {
+        if (const UploadHook hook = g_uploadHook.load(std::memory_order_acquire))
+            hook(code, codeSize, byteAddress, size);
+    }
+
+    void setPath1Filter(Path1Filter filter) { g_path1Filter.store(filter, std::memory_order_release); }
+
+    Path1Filter path1Filter() { return g_path1Filter.load(std::memory_order_acquire); }
 }
 
 void ps2xNoteVu1Upload(uint32_t byteAddress, const uint8_t *data, uint32_t size)

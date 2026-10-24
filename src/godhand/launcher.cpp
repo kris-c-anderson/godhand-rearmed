@@ -602,6 +602,10 @@ namespace godhand::launcher
                                                        "its edges can show dark, shimmering fringes. F2 switches it "
                                                        "while playing.");
                         iniCheckbox(state, "On##dof", "Video", "DepthOfField", true);
+                        settingLabel("Near geometry", "Walls, pillars and floors next to the camera are drawn. The PS2 "
+                                                      "drops them as the camera comes close (it cannot draw a triangle "
+                                                      "that reaches behind the camera).");
+                        iniCheckbox(state, "On##neargeometry", "Video", "NearGeometry", true);
                         settingLabel("HD texture pack", "Replacement textures in PCSX2's format.");
                         iniCheckbox(state, "Use replacement textures##tex", "Runtime", "PS2X_PCSX2_TEXTURES", true);
                         settingLabel("Texture pack folder", "The folder that holds replacements/. Empty: textures/SLUS-21503 "

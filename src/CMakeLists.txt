@@ -44,6 +44,7 @@ set(GODHAND_HOST_SOURCES
     godhand/widescreen.cpp
     godhand/camera.cpp
     godhand/modern_controls.cpp
+    godhand/near_geometry.cpp
     godhand/hud_layout.cpp
     godhand/ini_file.cpp
     godhand/counter_finder.cpp

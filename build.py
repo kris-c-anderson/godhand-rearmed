@@ -784,6 +784,24 @@ VU_IMAGES = ROOT / "build" / "vu1_images"
 VU1_RECOMP = BUILD / "runtime" / "ps2xTest" / "vu1_recomp.exe"
 
 
+def near_clip_patch(code):
+    """The near-geometry patch of a VU1 upload or image (src/godhand/near_geometry.cpp, uploadHook: keep the two the
+    same): "fcand vi01,0x03ffff" (a lower word, upper without the I bit) with a CLIPw within 64 pairs becomes
+    "fcand vi01,0x010410" (the far plane only). Returns the patched bytes, or None when nothing changed."""
+    words = list(struct.unpack(f"<{len(code) // 4}I", code[:len(code) // 8 * 8]))
+    pairs = len(words) // 2
+    changed = False
+    for i in range(pairs):
+        lo, up = words[2 * i], words[2 * i + 1]
+        if lo != 0x2403FFFF or up >> 31:
+            continue
+        near = range(max(0, i - 64), min(pairs, i + 64))
+        if any(not (words[2 * j + 1] >> 31) and (words[2 * j + 1] & 0x7FF) == 0x1FF for j in near):
+            words[2 * i] = 0x24010410
+            changed = True
+    return struct.pack(f"<{len(words)}I", *words) + code[len(words) * 4:] if changed else None
+
+
 def vu(args=()):
     """Compiles the game's VU1 microcode into generated/vu1 (README "Faster 3D"). Inputs, collected in build/vu1_images:
     every microcode upload (VIF MPG) found in the boot ELF and the SNR2 DLLs (tools/vu/extract_uploads.py), and the
@@ -810,6 +828,19 @@ def vu(args=()):
     images = len(list(VU_IMAGES.glob("vu1_*.bin")))
     uploads = len(list(VU_IMAGES.glob("vup_*_cap_*.bin")))
     print(f"captured: {images} images, {uploads} uploads ({copied} new)")
+    # [Video] NearGeometry patches the scenery renderers as they are uploaded: compile the patched code too.
+    patched = 0
+    for source in sorted(VU_IMAGES.glob("vu*.bin")):
+        if source.stem.endswith("_nearclip"):
+            continue
+        target = source.with_name(source.stem + "_nearclip.bin")
+        if target.exists():
+            continue
+        code = near_clip_patch(source.read_bytes())
+        if code is not None:
+            target.write_bytes(code)
+            patched += 1
+    print(f"near geometry: {patched} new patched uploads/images")
     if not (BUILD / "build.ninja").exists() or "GODHAND_BUILD_TOOLS:BOOL=ON" not in \
             (BUILD / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace"):
         if configure(["-DGODHAND_BUILD_TOOLS=ON"]):

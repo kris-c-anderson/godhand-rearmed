@@ -1,5 +1,6 @@
 // Based on Blackline Interactive implementation
 #include "runtime/ps2_memory.h"
+#include "runtime/ps2_vu1_hooks.h"
 #include <algorithm>
 #include <cstring>
 #include <vector>
@@ -631,6 +632,9 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
                 if (pos + copyBytes <= sizeBytes)
                 {
                     std::memcpy(m_vu1Code + destAddr, data + pos, copyBytes);
+                    // The game's own patches of what was just uploaded (ps2_vu1_hooks.h); the capture keeps the
+                    // upload as the disc has it.
+                    ps2x::vu1hooks::runUploadHook(m_vu1Code, PS2_VU1_CODE_SIZE, destAddr, copyBytes);
                     markVU1CodeModified();
                     ps2xNoteVu1Upload(destAddr, data + pos, copyBytes);
                 }

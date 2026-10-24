@@ -32,6 +32,7 @@
 #include "godhand/camera_presets.h"
 #include "godhand/ini_file.h"
 #include "godhand/modern_controls.h"
+#include "godhand/near_geometry.h"
 #include "godhand/log.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h" // GPR_U32
@@ -641,6 +642,18 @@ namespace godhand
             ui->text_disabled("The game's 16-bit depth is coarse in the distance, so surfaces that meet there cut into "
                               "each other in jagged, shifting slivers (on the PS2 too, under a pixel). On: the renderer "
                               "takes each surface's exact depth from its texture perspective instead. Off: as the PS2.");
+            {
+                uint64_t patched = 0, cut = 0, cutNear = 0, noStitch = 0;
+                nearGeometryStats(patched, cut, cutNear, noStitch);
+                char line[256];
+                std::snprintf(line, sizeof(line),
+                              "Near geometry (launcher / godhand.ini NearGeometry, at start): %llu renderer tests patched; "
+                              "%llu triangles cut at the screen's edges, %llu at the camera, %llu behind it left out "
+                              "(no stitch information).",
+                              static_cast<unsigned long long>(patched), static_cast<unsigned long long>(cut),
+                              static_cast<unsigned long long>(cutNear), static_cast<unsigned long long>(noStitch));
+                ui->text_wrapped(line);
+            }
             ui->separator_text("godhand.ini");
             if (ui->button("Save##graphics"))
                 saveToIni();

@@ -4,6 +4,16 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 24, 2026
 
+- **Near geometry** (`[Video] NearGeometry`, on; launcher Graphics; read at start): walls, pillars and floors next to
+  the camera are drawn instead of vanishing. The PS2 cannot draw a triangle with a corner off its 16-bit screen range or
+  behind the camera, so the game's scenery renderers drop such triangles whole, and a wall the camera comes close to
+  disappears (it was never hidden on purpose: its triangles are sent every frame, then dropped). Their clip test is
+  patched to the far plane only (in VU1 micro memory as each upload lands, and in the uploads compiled ahead of time),
+  and every PATH1 packet goes through a filter that cuts what the GS cannot take from the full 32-bit positions the
+  packet still carries: along the screen range (exact: everything the GS interpolates is affine on screen), and at the
+  near plane in clip space for triangles reaching behind the camera. The game's strip stitching is read from each
+  batch's input in VU1 memory, so stitches stay out and back faces are recognised (src/godhand/near_geometry.cpp;
+  runtime hooks in ps2_vu1_hooks.h). F2 > Graphics shows its counters.
 - **See-through** (`[Video] SeeThrough`, on; launcher Display; F2 > Camera sizes it live): walls, pillars and stalls
   between the camera and Gene dissolve in a soft-edged oval round him (an ordered dither, densest in the middle), so
   he and the enemies about him stay in view. Only what is more than `SeeThroughMargin` (1 m) nearer the camera than

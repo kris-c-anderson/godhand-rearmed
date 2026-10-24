@@ -31,6 +31,7 @@
 #include "godhand/game_options.h"
 #include "godhand/character_mods.h"
 #include "godhand/widescreen.h"
+#include "godhand/near_geometry.h"
 #include "godhand/camera.h"
 #if GODHAND_HAS_LAUNCHER
 #include "godhand/launcher.h"
@@ -395,6 +396,7 @@ namespace
         {"video", "posteffects", "PS2X_PCSX2_NATIVE_SCALING"},
         {"video", "depthoffield", "PS2X_PCSX2_DOF"},
         {"video", "precisedepth", "PS2X_PCSX2_PRECISE_DEPTH"},
+        {"video", "neargeometry", "GODHAND_NEAR_GEOMETRY"},
         {"launcher", "show", "GODHAND_LAUNCHER"},
     };
 
@@ -883,6 +885,7 @@ int main(int argc, char *argv[])
 #endif
         ps2_host_display::setStartMaximized(!headless && envFlag("GODHAND_START_MAXIMIZED", false));
         godhand::installWidescreen(); // the picture's shape: before the window is made
+        godhand::installNearGeometry(); // VU1 hooks: before the first microcode upload
         ps2_host_display::setStartFullscreen(!headless && envFlag("GODHAND_START_FULLSCREEN", false));
         if (!runtime.initialize(godhand::kGameTitle))
         {
