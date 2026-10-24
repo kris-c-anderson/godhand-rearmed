@@ -11,10 +11,8 @@ Newest first. Each change is commented in the code where it was made.
   with the camera's own matrix every frame (camera.cpp, hook in cCamera_update) and the renderer dissolves the
   depth-tested draws (pcsx2gs `see_through`, `GSRendererHW::ApplySeeThrough`, tfx.fx `PS_SEE_THROUGH`). Off in
   cutscenes.
-- **Camera ease back** (`[Video] CameraEaseBack`, on, `CameraEaseBackSeconds` 0.5): any jump of the gameplay
-  camera's view (after a grab, a special move, a shot of the game's own) becomes a glide (the look point straight, the
-  eye round it); jumps into a close-up, cuts (cutscenes, new rooms) and the Modern free camera turned by the player
-  are left alone. Every jump is logged (trace GAME) with what the game was doing.
+- **Radar follows the Modern free camera:** while the free camera has the view, the radar turns with the camera
+  (up = where it looks) instead of with Gene's facing (hook in func_00143D20, where it copies his rotation).
 - **Precise depth keeps the PS2's ties:** draws that test depth without writing it (shadows, decals, glows laid on a
   surface) passed on the PS2 wherever their integer depth tied the surface's; against exact depths they passed or
   failed pixel by pixel (the roof beams' shadows on the town's walls flickered). They now get the top of their

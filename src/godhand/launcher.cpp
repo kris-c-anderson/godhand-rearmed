@@ -544,9 +544,6 @@ namespace godhand::launcher
                                                     "round him, so he and the enemies about him stay in view. F2 > "
                                                     "Camera sizes it while playing.");
                         iniCheckbox(state, "On##seethrough", "Video", "SeeThrough", true);
-                        settingLabel("Camera ease back", "After a grab or another shot where the game moves the camera, "
-                                                         "it glides back to the gameplay view instead of cutting.");
-                        iniCheckbox(state, "On##easeback", "Video", "CameraEaseBack", true);
                         if (advanced)
                         {
                             settingLabel("Field of view", "How much the camera shows, both ways, outside fights.");

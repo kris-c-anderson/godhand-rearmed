@@ -244,11 +244,11 @@ hook = "gh_cam_distance"
 flag = "fov"
 replace = true
 
-# cCamera_update, at its start (sq s0,192(sp); a0 = the camera): the ease back after the game gives the camera back
-# (camera.cpp, written over the look point and eye before the matrices are built).
+# The radar's turn (func_00143D20, lqc2 $vf4,128(sp): Gene's rotation copied there): the Modern free camera's yaw while
+# it has the view (camera.cpp).
 [[patches.hooks]]
-address = "0x00138744"
-hook = "gh_cam_update"
+address = "0x00143F58"
+hook = "gh_radar_yaw"
 flag = "fov"
 
 # cCamera_update, once the world-to-screen matrix (+0x00) is built (lui at,0x4233 after MtxMultiply; s4 = the camera):
