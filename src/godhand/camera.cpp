@@ -94,6 +94,28 @@ namespace godhand
             std::memcpy(rdram + cameraAt(ctx, 0x250u), &value, sizeof(value));
         }
 
+        // Depth precision. cCamera_update builds the projection with sceVu0ViewScreenMatrix (func_0030AA40, called at
+        // 0x138864): zmin 1, zmax 2031584 / fov (65535 at the player camera's 31 degrees), near 0.1, far 600, into a
+        // 16-bit depth buffer (Z16S). Depth then falls as 1/distance: 65535 * 0.1 / d, about 330 at 20 m and 110 at
+        // 60 m, so one depth step is 6 cm at 20 m and 55 cm at 60 m. Surfaces that meet or lie close together at a
+        // distance (a pillar against a ledge) then cut into each other in steps that jump as the camera moves: the
+        // game's own z-fighting, under a pixel on the PS2, plain at high resolutions. The hook before 0x13884C (f18 =
+        // zmax / 2, f19 = near; s4 = the camera) raises the player camera's near distance by DepthPrecision (x4 = 0.4
+        // m: four times the steps everywhere; only what is nearer than that to the camera loses its depth order) and
+        // undoes the field-of-view option's shrinking of zmax. Cutscene and other cameras keep theirs. The depth of
+        // field reads the depth's high byte through a 256-entry ramp, which is nearly flat over the far range where
+        // most of the scene sits, so its blur hardly changes.
+        std::atomic<float> g_depthPrecision{4.0f};
+        std::atomic<uint32_t> g_playerCamera{0};
+
+        void cameraDepth(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            if (GPR_U32(ctx, 20) != g_playerCamera.load(std::memory_order_relaxed))
+                return;
+            ctx->f[19] *= std::fmin(std::fmax(g_depthPrecision.load(std::memory_order_relaxed), 1.0f), 10.0f);
+            ctx->f[18] *= std::fmax(g_mul, 0.25f);
+        }
+
         // Once per camera update: m eases toward the fight or the exploration value, and the readout is taken.
         // The camera preset the battle camera eases to (D_003BD540, an index into 0x3BD548/0x3BD5F0/0x3BD698): 0, 1
         // the usual battle framings; 2, 5, 6, 7, 10, 11, 12 bosses'; 3, 4, 8, 9, 13 the close-ups of grabs and
@@ -102,6 +124,7 @@ namespace godhand
 
         void easeMultiplier(const uint8_t *rdram, R5900Context *ctx, bool secondPath)
         {
+            g_playerCamera.store(GPR_U32(ctx, 17), std::memory_order_relaxed);
             int32_t preset;
             std::memcpy(&preset, rdram + cameraAt(ctx, 0x51Cu), sizeof(preset));
             const bool battle = preset > 0;
@@ -151,6 +174,7 @@ namespace godhand
                 dolly = 1.0f - closer + closer * same;
             }
             g_dolly.store(dolly, std::memory_order_relaxed);
+            g_lastDistance = distance * dolly;
             return distance * dolly;
         }
 
@@ -181,15 +205,22 @@ namespace godhand
             ctx->f[2] = relative;
         }
 
+        float g_lastDistance = 4.0f; // the eye's distance from the look point last update (orbitDistance)
+
         float orbitPitch(const uint8_t *rdram, R5900Context *ctx)
         {
-            const float pitch = loadFloat(rdram, cameraAt(ctx, 0x410u)) + g_freePitch;
+            float pitch = loadFloat(rdram, cameraAt(ctx, 0x410u));
             const float tilt = g_tiltDegrees.load(std::memory_order_relaxed) * kDegToRad;
             const float fov = fovFactor();
-            if (tilt == 0.0f || std::fabs(fov - 1.0f) < 0.0005f)
-                return pitch;
-            const float share = std::fmin(std::fmax((g_mul - 1.0f) / (fov - 1.0f), 0.0f), 1.0f);
-            return pitch + tilt * share;
+            if (tilt != 0.0f && std::fabs(fov - 1.0f) >= 0.0005f)
+                pitch += tilt * std::fmin(std::fmax((g_mul - 1.0f) / (fov - 1.0f), 0.0f), 1.0f);
+            // The free camera's pitch, kept so the eye stays 0.35 m above Gene's feet: the look point is the look
+            // offset's height (+0x404) plus +0x510 above them, the eye that plus distance * sin(pitch).
+            constexpr float kClearance = 0.35f;
+            const float lookHeight = loadFloat(rdram, cameraAt(ctx, 0x404u)) + loadFloat(rdram, cameraAt(ctx, 0x510u));
+            const float lowest = std::asin(std::fmin(std::fmax((kClearance - lookHeight) / std::fmax(g_lastDistance, 0.5f), -1.0f), 1.0f));
+            modern::setPitchFloor(lowest - pitch);
+            return pitch + std::fmax(g_freePitch, std::fmin(lowest - pitch, 0.0f));
         }
 
         // lwc1 $f4/$f0,0x410(s1) and lwc1 $f0,0x420(s1) where the eye is placed
@@ -295,6 +326,7 @@ namespace godhand
             ini.set("Video", "CameraTilt", number(g_tiltDegrees.load()));
             ini.setBool("Game", "EnemiesFollowView", g_enemyView.load());
             ini.setBool("Video", "DepthOfField", g_depthOfField.load());
+            ini.set("Video", "DepthPrecision", number(g_depthPrecision.load()));
             if (!ini.save())
             {
                 setStatus("Could not write godhand.ini.");
@@ -318,6 +350,7 @@ namespace godhand
             g_tiltDegrees = iniValue(ini, "Video", "CameraTilt", 0.0f, -30.0f, 30.0f);
             g_enemyView = ini.getBool("Game", "EnemiesFollowView", true);
             g_depthOfField = ini.getBool("Video", "DepthOfField", true);
+            g_depthPrecision = iniValue(ini, "Video", "DepthPrecision", 4.0f, 1.0f, 10.0f);
             GSPcsx2Backend::SetOption("dof", g_depthOfField.load() ? "1" : "0");
             setStatus("Back to the values in godhand.ini.");
         }
@@ -412,6 +445,12 @@ namespace godhand
             ui->text_disabled("The game's blur of the distance: a small blurred copy of the picture blended over it by "
                               "depth. At high internal resolutions its edges show as dark, jagged fringes that "
                               "shimmer as the camera moves.");
+            ui->separator_text("Depth precision");
+            slider(ui, "Depth precision##depth", g_depthPrecision, 1.0f, 10.0f, "x%.1f");
+            ui->text_disabled("The game's 16-bit depth is coarse in the distance, so surfaces that meet or lie close "
+                              "together there cut into each other in jagged, shifting slivers (on the PS2 too, under "
+                              "a pixel). Higher = finer depth everywhere; only what is closer than 0.1 m times this to "
+                              "the camera loses its order. x1 = as on the PS2. Gameplay camera only.");
             ui->separator_text("godhand.ini");
             if (ui->button("Save##graphics"))
                 saveToIni();
@@ -450,6 +489,7 @@ namespace godhand
         {
             const char *text = std::getenv("GODHAND_ENEMY_VIEW");
             g_enemyView = !(text && *text == '0');
+            g_depthPrecision = envValue("GODHAND_DEPTH_PRECISION", 4.0f, 1.0f, 10.0f);
             const char *dof = std::getenv("PS2X_PCSX2_DOF");
             g_depthOfField = !(dof && *dof == '0'); // the DLL reads the same variable when it opens
         }
@@ -461,6 +501,7 @@ namespace godhand
         ps2xRegisterHostHook("gh_cam_pitch_f0", &orbitPitchF0);
         ps2xRegisterHostHook("gh_cam_distance", &orbitDistanceF0);
         ps2xRegisterHostHook("gh_cam_yaw", &orbitYaw);
+        ps2xRegisterHostHook("gh_cam_depth", &cameraDepth);
         ps2xRegisterHostHook("gh_em_wedge", &enemyWedge);
         ps2xRegisterHostHook("gh_em_lunge", &enemyLunge);
         ps2xSetPatchFlag("fov", true);

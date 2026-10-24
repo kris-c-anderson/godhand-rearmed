@@ -28,6 +28,8 @@ namespace godhand::modern
         float pitch = 0.0f;
     };
     FreeCamera updateCamera(uint8_t *rdram, float gameYaw, float geneYaw, float dt);
+    // The lowest extra pitch that keeps the camera above the ground at its current distance (camera.cpp, every update).
+    void setPitchFloor(float floor);
     // setCamUpdate (a cut, a new room): back behind Gene.
     void resetCamera();
 }

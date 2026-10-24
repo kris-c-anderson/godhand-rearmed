@@ -244,6 +244,13 @@ hook = "gh_cam_distance"
 flag = "fov"
 replace = true
 
+# Depth precision (camera.cpp): before daddu a0,s0,zero in cCamera_update, between the projection's arguments and the
+# call to func_0030AA40 (f18 = zmax / 2, f19 = near).
+[[patches.hooks]]
+address = "0x0013884C"
+hook = "gh_cam_depth"
+flag = "fov"
+
 # The camera's yaw offset from Gene's facing (lwc1 $f2,0x414(s1)): the Modern controls' free camera (camera.cpp).
 [[patches.hooks]]
 address = "0x0013A2B8"

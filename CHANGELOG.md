@@ -4,11 +4,18 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 24, 2026
 
+- **Depth precision** (`[Video] DepthPrecision`, default x4; F2 > Graphics live): the jagged, shifting slivers where
+  distant surfaces meet (a pillar against a ledge) are the game's own z-fighting: its 16-bit depth falls as
+  1/distance from a near plane at 0.1 m, so a depth step is 6 cm at 20 m and 55 cm at 60 m (the same in PCSX2; under
+  a pixel at the PS2's resolution). The gameplay camera's near plane moves out by the factor (0.4 m at x4: four times
+  the precision everywhere), and the field-of-view option no longer shrinks the depth range.
+- **Modern controls:** Auto's fight range 3 m; free camera 200 degrees a second by default; it can look further up,
+  as far as keeps it 0.35 m above Gene's feet.
 - **Control Style: Modern** (`[Game] ControlStyle=modern`, Gameplay, F2 > Controls): the right stick turns a free
   camera round Gene and the left stick moves him relative to the camera (he faces where he walks). The original
   controls (tank movement, right stick = dodges, the camera behind Gene) while L1 is held (or toggled with
   `ModernL1=toggle`), and with `ModernAuto` in fights: from the battle camera coming on until no enemy has been within
-  6 m for 1.5 s. Double-tap L1 = the original quick turn, the camera staying behind Gene through it. Whenever the game
+  3 m for 1.5 s. Double-tap L1 = the original quick turn, the camera staying behind Gene through it. Whenever the game
   takes the camera (grab and special-move close-ups, cutscenes, menus) the controls are the original ones.
 - **Depth of field switch** (`[Video] DepthOfField`, Graphics; F2 > Graphics switches it while playing): the game's
   distance blur is composited from a quarter-size copy and mask of the picture, which at high internal resolutions

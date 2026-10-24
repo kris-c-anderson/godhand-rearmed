@@ -3,7 +3,7 @@
 // Modern: the right stick turns a free camera round Gene instead of dodging, and the left stick moves him relative to
 // the camera (he faces where he walks). The original controls (tank movement, right stick = dodges, the camera behind
 // Gene) are in effect while L1 is held (Style: Hold) or after a press of L1 until the next (Style: Toggle), and with
-// Auto also in a fight: from the moment the game's battle camera comes on until no enemy is within 6 m for 1.5 s (the
+// Auto also in a fight: from the moment the game's battle camera comes on until no enemy is within 3 m for 1.5 s (the
 // battle camera itself turns off after a few seconds without attacking). A double tap of L1 is the original quick
 // turn (L1 reaches the game only then), and the camera swings back behind Gene with him. Whenever the game takes the
 // camera (a close-up for a grab or a special move, a cutscene, a menu: no player camera update for a moment),
@@ -50,9 +50,9 @@ namespace godhand::modern
         constexpr int64_t kQuickTurnMs = 90;   // how long L1 is held for the game then
         constexpr int64_t kNoCameraMs = 150;   // no player camera update for this long: the game has the camera
         constexpr float kStickDeadzone = 0.18f;
-        constexpr float kPitchMin = -0.35f, kPitchMax = 0.9f; // extra pitch, radians
+        constexpr float kPitchMin = -1.2f, kPitchMax = 0.9f; // extra pitch, radians (the floor is camera.cpp's: above the ground)
         constexpr int64_t kQuickTurnFollowMs = 650;            // the camera stays behind Gene this long after one
-        constexpr float kFightRange = 6.0f;                    // Auto: still in the fight while an enemy is this close
+        constexpr float kFightRange = 3.0f;                    // Auto: still in the fight while an enemy is this close
         constexpr int64_t kFightLingerMs = 1500;               // ... or was, this long ago
         constexpr float kTurnRate = 900.0f * (3.14159265f / 180.0f); // Gene turned toward the stick, radians a second
         constexpr uint32_t kPlayerPointer = 0x747A94u;         // Getplayer
@@ -62,7 +62,7 @@ namespace godhand::modern
         std::atomic<bool> g_modern{false};
         std::atomic<bool> g_auto{true};
         std::atomic<bool> g_toggleStyle{false};
-        std::atomic<float> g_yawSpeed{150.0f};  // degrees a second at full stick
+        std::atomic<float> g_yawSpeed{200.0f};  // degrees a second at full stick
         std::atomic<float> g_pitchSpeed{80.0f};
         std::atomic<bool> g_invertX{false};
         std::atomic<bool> g_invertY{false};
@@ -83,6 +83,7 @@ namespace godhand::modern
         std::atomic<bool> g_moving{false};      // the left stick asks for a direction (Modern movement)
         std::atomic<float> g_moveYaw{0.0f};     // that direction (world yaw)
         std::atomic<uint32_t> g_recenter{0};    // bumped by each quick turn
+        std::atomic<float> g_pitchFloor{-1.2f}; // the lowest extra pitch that keeps the camera above the ground
 
         // Input side only (window thread).
         bool g_l1Was = false;
@@ -470,7 +471,8 @@ namespace godhand::modern
             const float x = g_stickX.load(std::memory_order_relaxed) * (g_invertX.load() ? -1.0f : 1.0f);
             const float y = g_stickY.load(std::memory_order_relaxed) * (g_invertY.load() ? -1.0f : 1.0f);
             g_yaw = wrapAngle(g_yaw - x * g_yawSpeed.load(std::memory_order_relaxed) * kDegToRad * dt);
-            g_pitch = std::fmin(std::fmax(g_pitch + y * g_pitchSpeed.load(std::memory_order_relaxed) * kDegToRad * dt, kPitchMin), kPitchMax);
+            const float floor = std::fmax(kPitchMin, std::fmin(g_pitchFloor.load(std::memory_order_relaxed), 0.0f));
+            g_pitch = std::fmin(std::fmax(g_pitch + y * g_pitchSpeed.load(std::memory_order_relaxed) * kDegToRad * dt, floor), kPitchMax);
             g_free = true;
 
             // Gene faces where the left stick points while he stands or walks (elsewhere the stick the filter made
@@ -492,6 +494,11 @@ namespace godhand::modern
         return out;
     }
 
+    void setPitchFloor(float floor)
+    {
+        g_pitchFloor.store(floor, std::memory_order_relaxed);
+    }
+
     void resetCamera()
     {
         g_tracking = true;
@@ -503,7 +510,7 @@ namespace godhand::modern
         g_modern = envIs("GODHAND_CONTROL_STYLE", "modern");
         g_auto = envBool("GODHAND_MODERN_AUTO", true);
         g_toggleStyle = envIs("GODHAND_MODERN_L1", "toggle");
-        g_yawSpeed = envFloat("GODHAND_CAMERA_SPEED", 150.0f, 40.0f, 400.0f);
+        g_yawSpeed = envFloat("GODHAND_CAMERA_SPEED", 200.0f, 40.0f, 400.0f);
         g_pitchSpeed = envFloat("GODHAND_CAMERA_PITCH_SPEED", 80.0f, 20.0f, 250.0f);
         g_invertX = envBool("GODHAND_CAMERA_INVERT_X", false);
         g_invertY = envBool("GODHAND_CAMERA_INVERT_Y", false);
