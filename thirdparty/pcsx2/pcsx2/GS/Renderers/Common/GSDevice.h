@@ -812,6 +812,9 @@ struct alignas(16) GSHWDrawConfig
 				// ROVs
 				u32 rov_color : 1;
 				PS_ROV_DEPTH rov_depth : 2;
+
+				// pcsx2gs (God Hand): the see-through oval round the player (GSRendererHW::ApplySeeThrough)
+				u32 see_through : 1;
 			};
 
 			struct
@@ -1145,6 +1148,12 @@ struct alignas(16) GSHWDrawConfig
 		float _pad0;
 		float _pad1;
 		float _pad2;
+
+		// pcsx2gs (God Hand), GSRendererHW::ApplySeeThrough: A = the oval's centre (render-target pixels) and 1 / its
+		// radii; B = the depth where hiding starts, 1 / the depth over which it reaches full (shader depth units),
+		// the strength (0..1), 1 / the soft edge's width (fraction of the radius).
+		GSVector4 SeeThroughA;
+		GSVector4 SeeThroughB;
 
 		__fi PSConstantBuffer()
 		{

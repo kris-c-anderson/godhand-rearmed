@@ -119,6 +119,7 @@
 #define PS_ABE 0
 #define PS_ROV_COLOR 0
 #define PS_ROV_DEPTH 0
+#define PS_SEE_THROUGH 0
 #endif
 
 #ifndef VS_EXPAND_NONE
@@ -282,7 +283,25 @@ cbuffer cb1
 	float _pad2_cb1;
 	float _pad3_cb1;
 	float _pad4_cb1;
+	float4 SeeThroughA; // pcsx2gs: the oval's centre (pixels), 1 / its radii
+	float4 SeeThroughB; // pcsx2gs: depth where hiding starts, 1 / its ramp, strength, 1 / soft edge
 };
+
+#if PS_SEE_THROUGH
+// pcsx2gs (God Hand): the see-through oval round the player (GSRendererHW::ApplySeeThrough). What lies nearer the
+// camera than the player by a margin, inside the oval, is dissolved: an ordered 4x4 dither of the pixels, densest
+// in the middle, thinning over the soft edge and over the first stretch of depth past the margin.
+bool SeeThroughHides(float4 p)
+{
+	static const float bayer[16] = { 0.0f, 8.0f, 2.0f, 10.0f, 12.0f, 4.0f, 14.0f, 6.0f,
+	                                 3.0f, 11.0f, 1.0f, 9.0f, 15.0f, 7.0f, 13.0f, 5.0f };
+	float2 d = (p.xy - SeeThroughA.xy) * SeeThroughA.zw;
+	float radial = saturate((1.0f - sqrt(dot(d, d))) * SeeThroughB.w);
+	float nearer = saturate((p.z - SeeThroughB.x) * SeeThroughB.y);
+	uint2 cell = uint2(p.xy) & 3u;
+	return radial * nearer * SeeThroughB.z > (bayer[cell.y * 4u + cell.x] + 0.5f) / 16.0f;
+}
+#endif
 
 float4 RtLoad(int2 xy)
 {
@@ -1362,6 +1381,11 @@ void ps_main(PS_INPUT input)
 		DISCARD;
 #elif PS_ZTST == ZTST_GREATER
 	if (input.p.z <= DepthLoad(input.p.xy))
+		DISCARD;
+#endif
+
+#if PS_SEE_THROUGH
+	if (SeeThroughHides(input.p))
 		DISCARD;
 #endif
 

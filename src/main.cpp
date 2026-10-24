@@ -389,6 +389,8 @@ namespace
         {"game", "camerapitchspeed", "GODHAND_CAMERA_PITCH_SPEED"},
         {"game", "camerainvertx", "GODHAND_CAMERA_INVERT_X"},
         {"game", "camerainverty", "GODHAND_CAMERA_INVERT_Y"},
+        {"game", "mousecamera", "GODHAND_MOUSE_CAMERA"},
+        {"game", "mousesensitivity", "GODHAND_MOUSE_SENSITIVITY"},
         {"video", "startfullscreen", "GODHAND_START_FULLSCREEN"},
         {"video", "posteffects", "PS2X_PCSX2_NATIVE_SCALING"},
         {"video", "depthoffield", "PS2X_PCSX2_DOF"},

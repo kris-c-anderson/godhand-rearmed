@@ -244,6 +244,20 @@ hook = "gh_cam_distance"
 flag = "fov"
 replace = true
 
+# cCamera_update, at its start (sq s0,192(sp); a0 = the camera): the ease back after the game gives the camera back
+# (camera.cpp, written over the look point and eye before the matrices are built).
+[[patches.hooks]]
+address = "0x00138744"
+hook = "gh_cam_update"
+flag = "fov"
+
+# cCamera_update, once the world-to-screen matrix (+0x00) is built (lui at,0x4233 after MtxMultiply; s4 = the camera):
+# the see-through oval round Gene (camera.cpp -> pcsx2gs "see_through").
+[[patches.hooks]]
+address = "0x001388F0"
+hook = "gh_cam_matrix"
+flag = "fov"
+
 # The camera's yaw offset from Gene's facing (lwc1 $f2,0x414(s1)): the Modern controls' free camera (camera.cpp).
 [[patches.hooks]]
 address = "0x0013A2B8"

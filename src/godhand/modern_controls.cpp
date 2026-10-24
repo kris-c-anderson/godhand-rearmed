@@ -16,6 +16,11 @@
 // stands or walks, his yaw (+0x104) is also turned toward the stick's direction directly (up to 900 degrees a
 // second), so he does not have to wait for the original turning speed.
 //
+// Mouse ([Game] MouseCamera, on by default): the runtime's mouse camera captures the mouse on a click in the game
+// window (that click is not passed on; Esc or losing the focus frees it, and so does the F2 menu); its movement turns
+// the free camera at MouseSensitivity degrees per pixel. The mouse never reaches the game as a right stick, so it
+// cannot dodge; while the original controls are in effect it does nothing.
+//
 // Directions: the camera's yaw is in Gene's convention (the original camera's yaw is his + the offset at +0x414),
 // "right" on the stick is the direction a camera turned right by the stick would face (yaw decreasing).
 #include "godhand/modern_controls.h"
@@ -24,6 +29,7 @@
 #include "godhand/log.h"
 #include "ps2_host_input.h"
 #include "runtime/ps2_game_menu.h"
+#include "runtime/ps2_input_options.h"
 
 #include <atomic>
 #include <cctype>
@@ -66,6 +72,8 @@ namespace godhand::modern
         std::atomic<float> g_pitchSpeed{80.0f};
         std::atomic<bool> g_invertX{false};
         std::atomic<bool> g_invertY{false};
+        std::atomic<bool> g_mouseCamera{true};
+        std::atomic<float> g_mouseSensitivity{0.1f}; // degrees per pixel
 
         // Camera side -> input side.
         std::atomic<bool> g_battle{false};      // in a fight (Auto): the battle camera, or still close to an enemy
@@ -217,6 +225,21 @@ namespace godhand::modern
         int64_t g_followUntilMs = 0; // ... and staying there at least until then (his turn takes a moment)
         uint32_t g_recenterSeen = 0;
         int64_t g_lastNearMs = -100000;
+        int g_mouseState = -1; // the mouse camera as last set (-1 = not yet)
+
+        // The runtime's mouse camera on while the Modern style and the mouse option are; its movement since the last
+        // frame (always taken, so nothing piles up while it is not used).
+        ps2_host_input::MouseCameraInput takeMouse()
+        {
+            const int wanted = (g_modern.load(std::memory_order_relaxed) && g_mouseCamera.load(std::memory_order_relaxed)) ? 1 : 0;
+            if (wanted != g_mouseState)
+            {
+                g_mouseState = wanted;
+                ps2_host_input::setMouseStickEnabled(false); // the mouse is never the game's right stick
+                ps2_host_input::setMouseCameraEnabled(wanted != 0); // the window thread frees the cursor when off
+            }
+            return ps2_host_input::consumeMouseCameraInput();
+        }
 
         uint32_t ram32(const uint8_t *rdram, uint32_t address)
         {
@@ -291,6 +314,13 @@ namespace godhand::modern
             return text;
         }
 
+        std::string number2(float value)
+        {
+            char text[32];
+            std::snprintf(text, sizeof(text), "%g", std::round(value * 1000.0f) / 1000.0f);
+            return text;
+        }
+
         void saveToIni()
         {
             IniFile ini;
@@ -306,6 +336,8 @@ namespace godhand::modern
             ini.set("Game", "CameraPitchSpeed", number(g_pitchSpeed.load()));
             ini.setBool("Game", "CameraInvertX", g_invertX.load());
             ini.setBool("Game", "CameraInvertY", g_invertY.load());
+            ini.setBool("Game", "MouseCamera", g_mouseCamera.load());
+            ini.set("Game", "MouseSensitivity", number2(g_mouseSensitivity.load()));
             setStatus(ini.save() ? "Saved to godhand.ini." : "Could not write godhand.ini.");
         }
 
@@ -351,6 +383,12 @@ namespace godhand::modern
             slider(ui, "Up/down speed##pitch", g_pitchSpeed, 20.0f, 250.0f, "%.0f deg/s");
             checkbox(ui, "Invert left/right##invx", g_invertX);
             checkbox(ui, "Invert up/down##invy", g_invertY);
+            ui->separator_text("Mouse");
+            checkbox(ui, "The mouse turns the free camera##mouse", g_mouseCamera);
+            ui->begin_disabled(!g_mouseCamera.load());
+            slider(ui, "Sensitivity##mousesens", g_mouseSensitivity, 0.02f, 0.5f, "%.3f deg/pixel");
+            ui->end_disabled();
+            ui->text_disabled("Click in the game to capture the mouse; Esc frees it (so does this menu).");
             ui->end_disabled();
 
             ui->separator_text("Now");
@@ -426,6 +464,7 @@ namespace godhand::modern
     {
         FreeCamera out;
         g_geneYaw.store(geneYaw, std::memory_order_relaxed);
+        const ps2_host_input::MouseCameraInput mouse = takeMouse();
         if (!g_modern.load(std::memory_order_relaxed))
         {
             g_tracking = true;
@@ -470,9 +509,18 @@ namespace godhand::modern
         {
             const float x = g_stickX.load(std::memory_order_relaxed) * (g_invertX.load() ? -1.0f : 1.0f);
             const float y = g_stickY.load(std::memory_order_relaxed) * (g_invertY.load() ? -1.0f : 1.0f);
-            g_yaw = wrapAngle(g_yaw - x * g_yawSpeed.load(std::memory_order_relaxed) * kDegToRad * dt);
+            float yawStep = x * g_yawSpeed.load(std::memory_order_relaxed) * kDegToRad * dt;
+            float pitchStep = y * g_pitchSpeed.load(std::memory_order_relaxed) * kDegToRad * dt;
+            if (mouse.active)
+            {
+                // Mouse right = turn right (yaw decreasing), mouse down = look down (pitch up), as the stick.
+                const float perPixel = g_mouseSensitivity.load(std::memory_order_relaxed) * kDegToRad;
+                yawStep += mouse.x * perPixel * (g_invertX.load() ? -1.0f : 1.0f);
+                pitchStep += mouse.y * perPixel * (g_invertY.load() ? -1.0f : 1.0f);
+            }
+            g_yaw = wrapAngle(g_yaw - yawStep);
             const float floor = std::fmax(kPitchMin, std::fmin(g_pitchFloor.load(std::memory_order_relaxed), 0.0f));
-            g_pitch = std::fmin(std::fmax(g_pitch + y * g_pitchSpeed.load(std::memory_order_relaxed) * kDegToRad * dt, floor), kPitchMax);
+            g_pitch = std::fmin(std::fmax(g_pitch + pitchStep, floor), kPitchMax);
             g_free = true;
 
             // Gene faces where the left stick points while he stands or walks (elsewhere the stick the filter made
@@ -514,6 +562,8 @@ namespace godhand::modern
         g_pitchSpeed = envFloat("GODHAND_CAMERA_PITCH_SPEED", 80.0f, 20.0f, 250.0f);
         g_invertX = envBool("GODHAND_CAMERA_INVERT_X", false);
         g_invertY = envBool("GODHAND_CAMERA_INVERT_Y", false);
+        g_mouseCamera = envBool("GODHAND_MOUSE_CAMERA", true);
+        g_mouseSensitivity = envFloat("GODHAND_MOUSE_SENSITIVITY", 0.1f, 0.01f, 1.0f);
         g_iniPath = cameraIniPath();
         ps2_host_input::setPadFilter(&padFilter);
         GH_INFO(Game, "control style: " << (g_modern.load() ? "modern" : "classic")

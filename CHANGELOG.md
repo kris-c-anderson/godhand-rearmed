@@ -4,6 +4,19 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 24, 2026
 
+- **See-through** (`[Video] SeeThrough`, on; launcher Display; F2 > Camera sizes it live): walls, pillars and stalls
+  between the camera and Gene dissolve in a soft-edged oval round him (an ordered dither, densest in the middle), so
+  he and the enemies about him stay in view. Only what is more than `SeeThroughMargin` (1 m) nearer the camera than
+  Gene dissolves; he, the enemies round him, the floor at his feet and the HUD are untouched. The game projects Gene
+  with the camera's own matrix every frame (camera.cpp, hook in cCamera_update) and the renderer dissolves the
+  depth-tested draws (pcsx2gs `see_through`, `GSRendererHW::ApplySeeThrough`, tfx.fx `PS_SEE_THROUGH`). Off in
+  cutscenes.
+- **Camera ease back** (`[Video] CameraEaseBack`, on, `CameraEaseBackSeconds` 0.5): after a grab, a special move or
+  another shot where the game takes the camera, a jump back to the gameplay view becomes a glide (the look point
+  straight, the eye round it). Cuts (cutscenes, new rooms) still cut.
+- **Modern controls: mouse camera** (`[Game] MouseCamera`, on; `MouseSensitivity` 0.1 degrees per pixel; F2 >
+  Controls): the mouse turns the free camera. A click in the game captures it, Esc frees it. It never reaches the
+  game as the right stick, so it cannot dodge.
 - **Precise depth** (`[Video] PreciseDepth`, on; F2 > Graphics live): the jagged, shifting slivers where distant
   surfaces meet (a pillar against a ledge) are the game's own z-fighting: its 16-bit depth falls as 1/distance from a
   near plane at 0.1 m, so a depth step is 6 cm at 20 m and 55 cm at 60 m (the same in PCSX2; under a pixel at the

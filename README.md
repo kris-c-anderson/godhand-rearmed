@@ -30,7 +30,8 @@ work. Improvements and discoveries from the recomp and from the
   edges (or kept where the PS2 had it); menus stay in the PS2's proportions or stretch, your choice.
 - **A wider camera that still plays like the original:** a field of view option that brings the camera in so Gene
   keeps his size, fights framed as on the PS2, and enemies whose sense of "in front of Gene" widens with the picture,
-  so the ones you can now see at the edges fight as they did at the PS2's edges. Tunable live in the F2 menu.
+  so the ones you can now see at the edges fight as they did at the PS2's edges. Walls between the camera and Gene
+  dissolve round him, and the camera glides back after grabs instead of cutting. Tunable live in the F2 menu.
 - **HD texture packs:** PCSX2-format replacement packs, with or without the character mods' own textures.
 - **A launcher:** install (pick and check your disc image), play, and every option in one place: display, graphics,
   gameplay, mods, controls.
@@ -106,9 +107,9 @@ Your settings are in `build\port\bin\godhand.ini` (every launcher option is a li
 
 | Where | What |
 |---|---|
-| Display | Aspect ratio, HUD layout (16:9 edges or 4:3), menu layout (4:3 or stretched), camera (presets; with "Show advanced settings": field of view, in fights, distance, tilt, enemies following the view), window / full screen, window size |
+| Display | Aspect ratio, HUD layout (16:9 edges or 4:3), menu layout (4:3 or stretched), camera (presets; with "Show advanced settings": field of view, in fights, distance, tilt, enemies following the view), see-through walls, camera ease back, window / full screen, window size |
 | Graphics | Internal resolution (1x–8x), post effects (PS2 resolution or upscaled), HD texture pack and its folder |
-| Gameplay | 60 FPS, L3 dash, control style (classic / modern, work in progress), roulette timer (normal / double), Unlock Hard, mute music |
+| Gameplay | 60 FPS, L3 dash, control style (classic / modern with mouse camera, work in progress), roulette timer (normal / double), Unlock Hard, mute music |
 | Mods | Character: Gene or Xavier |
 | Controls | Every key, mouse button and controller button (also F1 in game) |
 

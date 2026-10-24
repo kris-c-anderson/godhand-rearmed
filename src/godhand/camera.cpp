@@ -103,15 +103,32 @@ namespace godhand
         // again from Q: pcsx2gs, GSRendererHW::ApplyPreciseDepth). A wider fov shrinks zmax with it, and that is left
         // alone: every projection of the frame has to share one depth scale. Two fixes were tried and undone:
         // - the near plane moved out: the game culls what comes nearer than it, so walls near the camera vanished;
-        // - zmax put back for the player camera (a hook before 0x13884C): part of the scenery is drawn with another
-        //   projection built from the same widened fov, so walls drawn with it lost the depth test to whatever stood
-        //   behind them (dump gif_11967: Z = 4285 Q for a wall, 6569 Q for the cabinet behind it).
+        // - zmax put back for the player camera (a hook before 0x13884C): the stage is drawn with its own projection,
+        //   built the same way from the camera's fov (zmax 2031584 / fov at 0x2A3A88, also 0x29E9A8 and Fil_clut_set),
+        //   so it kept the widened fov's smaller range while the models had the PS2's, and walls lost the depth test to
+        //   models behind them (dump gif_11967: Z = 4285 Q for a wall, 6569 Q for the cabinet behind it).
+        // Some passes use a fixed zmax of 65535 (func_0014C7E8, func_0014D0E8, trails, most 2D): at a wider fov they sit
+        // a little nearer in depth than the scene, as they already did at the game's own wider battle fovs.
 
         // Once per camera update: m eases toward the fight or the exploration value, and the readout is taken.
         // The camera preset the battle camera eases to (D_003BD540, an index into 0x3BD548/0x3BD5F0/0x3BD698): 0, 1
         // the usual battle framings; 2, 5, 6, 7, 10, 11, 12 bosses'; 3, 4, 8, 9, 13 the close-ups of grabs and
         // special moves (the game's own moment: the Modern controls step aside).
         constexpr uint32_t kCameraPreset = 0x3BD540u;
+
+        // The player camera (cPlCamera, s1 in its own hooks; a0 / s4 in cCamera_update), when it was last updated by its
+        // own logic, and whether the game has taken it (a close-up preset, the second update path): the ease back and
+        // the see-through oval below work from these.
+        std::atomic<uint32_t> g_playerCamera{0};
+        std::atomic<int64_t> g_playerCameraMs{0};
+        std::atomic<bool> g_gameTookCamera{false};
+        std::atomic<bool> g_cameraCut{false}; // setCamUpdate (a cut): no ease back across it
+
+        int64_t steadyMs()
+        {
+            using namespace std::chrono;
+            return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+        }
 
         void easeMultiplier(const uint8_t *rdram, R5900Context *ctx, bool secondPath)
         {
@@ -122,6 +139,9 @@ namespace godhand
             std::memcpy(&mode, rdram + kCameraPreset, sizeof(mode));
             const bool closeUp = battle && (mode == 3 || mode == 4 || mode == 8 || mode == 9 || mode == 13);
             modern::noteCamera(rdram, battle, secondPath || closeUp);
+            g_playerCamera.store(GPR_U32(ctx, 17), std::memory_order_relaxed);
+            g_playerCameraMs.store(steadyMs(), std::memory_order_relaxed);
+            g_gameTookCamera.store(secondPath || closeUp, std::memory_order_relaxed);
             g_mul += ((battle ? fightFactor() : fovFactor()) - g_mul) * 0.1f;
             g_battle.store(battle, std::memory_order_relaxed);
             g_camFov.store(loadFloat(rdram, cameraAt(ctx, 0x250u)), std::memory_order_relaxed);
@@ -149,6 +169,7 @@ namespace godhand
         {
             g_mul = fovFactor();
             modern::resetCamera();
+            g_cameraCut.store(true, std::memory_order_relaxed);
             storeFov(rdram, ctx, ctx->f[0] * g_mul);
         }
 
@@ -215,6 +236,285 @@ namespace godhand
         void orbitPitchF4(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { ctx->f[4] = orbitPitch(rdram, ctx); }  // 0x13A2A8, 0x13BACC
         void orbitPitchF0(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { ctx->f[0] = orbitPitch(rdram, ctx); }  // 0x13B12C
         void orbitDistanceF0(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { ctx->f[0] = orbitDistance(rdram, ctx); } // 0x13A2F4, 0x13B15C, 0x13BB18
+
+        // ---- Ease back after the game's own camera moves ------------------------------------------------------------
+        //
+        // A grab, a special move or a scripted moment takes the camera (a close-up preset or the second update path);
+        // when it gives it back the camera cuts to wherever the gameplay camera is. With [Video] CameraEaseBack, a jump
+        // of the camera within a moment of the game giving it back starts a glide instead (CameraEaseBackSeconds, 0.5 s
+        // by default): from the last view drawn to the camera's own view of each frame, the look point moving straight
+        // and the eye round it (direction and distance eased apart). Written over the camera's look point (+0x200) and
+        // eye (+0x210) before cCamera_update builds the frame's matrices (0x138744, a0 = the camera), so everything
+        // drawn from the camera follows; the camera's logic computes both afresh every frame. A cut (setCamUpdate: a
+        // cutscene, a new room) never eases.
+        std::atomic<bool> g_easeBackOn{true};
+        std::atomic<float> g_easeBackSeconds{0.5f};
+
+        struct Pose
+        {
+            float look[3];
+            float eye[3];
+        };
+
+        Pose readPose(const uint8_t *rdram, uint32_t camera)
+        {
+            Pose pose;
+            for (int i = 0; i < 3; ++i)
+            {
+                pose.look[i] = loadFloat(rdram, camera + 0x200u + 4u * i);
+                pose.eye[i] = loadFloat(rdram, camera + 0x210u + 4u * i);
+            }
+            return pose;
+        }
+
+        void writePose(uint8_t *rdram, uint32_t camera, const Pose &pose)
+        {
+            for (int i = 0; i < 3; ++i)
+            {
+                std::memcpy(rdram + ((camera + 0x200u + 4u * i) & (PS2_RAM_SIZE - 1u)), &pose.look[i], sizeof(float));
+                std::memcpy(rdram + ((camera + 0x210u + 4u * i) & (PS2_RAM_SIZE - 1u)), &pose.eye[i], sizeof(float));
+            }
+        }
+
+        float length3(const float *v) { return std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); }
+
+        // A jump between two frames' views: the look point or the eye moved further than a camera glides in a frame,
+        // or the direction from the look point to the eye turned by more than 10 degrees.
+        bool jumped(const Pose &a, const Pose &b)
+        {
+            float dl[3], de[3], oa[3], ob[3];
+            for (int i = 0; i < 3; ++i)
+            {
+                dl[i] = b.look[i] - a.look[i];
+                de[i] = b.eye[i] - a.eye[i];
+                oa[i] = a.eye[i] - a.look[i];
+                ob[i] = b.eye[i] - b.look[i];
+            }
+            if (length3(dl) > 0.3f || length3(de) > 0.4f)
+                return true;
+            const float la = length3(oa), lb = length3(ob);
+            if (la < 0.01f || lb < 0.01f)
+                return false;
+            const float cosine = (oa[0] * ob[0] + oa[1] * ob[1] + oa[2] * ob[2]) / (la * lb);
+            return cosine < std::cos(10.0f * kDegToRad);
+        }
+
+        Pose blendPose(const Pose &from, const Pose &to, float s)
+        {
+            Pose out;
+            float of[3], ot[3], dir[3];
+            for (int i = 0; i < 3; ++i)
+            {
+                out.look[i] = from.look[i] + (to.look[i] - from.look[i]) * s;
+                of[i] = from.eye[i] - from.look[i];
+                ot[i] = to.eye[i] - to.look[i];
+            }
+            const float lf = length3(of), lt = length3(ot);
+            const float dot = (lf > 0.01f && lt > 0.01f) ? (of[0] * ot[0] + of[1] * ot[1] + of[2] * ot[2]) / (lf * lt) : -1.0f;
+            if (dot < -0.9f)
+            {
+                // Nearly opposite sides: straight across (a turn would have no one way round).
+                for (int i = 0; i < 3; ++i)
+                    out.eye[i] = from.eye[i] + (to.eye[i] - from.eye[i]) * s;
+                return out;
+            }
+            for (int i = 0; i < 3; ++i)
+                dir[i] = of[i] / lf + (ot[i] / lt - of[i] / lf) * s;
+            const float ld = std::fmax(length3(dir), 1e-4f), distance = lf + (lt - lf) * s;
+            for (int i = 0; i < 3; ++i)
+                out.eye[i] = out.look[i] + dir[i] / ld * distance;
+            return out;
+        }
+
+        // Game thread only.
+        Pose g_drawnPose{};          // the view the last frame was drawn from
+        bool g_haveDrawn = false;
+        bool g_wasTaken = false;
+        int64_t g_armedUntilMs = 0;  // a jump until then (after the game gave the camera back) eases
+        Pose g_easeFrom{};
+        float g_easeTime = -1.0f;    // < 0: not easing
+        float g_easeLength = 0.5f;
+        int64_t g_lastUpdateMs = 0;
+
+        // 0x138744 (cCamera_update, sq s0,192(sp); a0 = the camera)
+        void cameraUpdateStart(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t camera = GPR_U32(ctx, 4);
+            if (camera != g_playerCamera.load(std::memory_order_relaxed) || camera < 0x100000u || camera >= PS2_RAM_SIZE)
+                return;
+            const int64_t now = steadyMs();
+            const float dt = std::fmin(std::fmax(static_cast<float>(now - g_lastUpdateMs) / 1000.0f, 0.0f), 0.1f);
+            g_lastUpdateMs = now;
+            const Pose game = readPose(rdram, camera);
+            const bool taken = g_gameTookCamera.load(std::memory_order_relaxed);
+            if (g_cameraCut.exchange(false, std::memory_order_relaxed) || !g_easeBackOn.load(std::memory_order_relaxed))
+            {
+                g_easeTime = -1.0f;
+                g_armedUntilMs = 0;
+                g_wasTaken = taken;
+                g_drawnPose = game;
+                g_haveDrawn = true;
+                return;
+            }
+            if (taken)
+            {
+                g_easeTime = -1.0f; // into a close-up as the game cuts to it
+                g_armedUntilMs = 0;
+            }
+            else if (g_wasTaken)
+                g_armedUntilMs = now + 400;
+            g_wasTaken = taken;
+
+            if (g_easeTime < 0.0f && !taken && now < g_armedUntilMs && g_haveDrawn && jumped(g_drawnPose, game))
+            {
+                g_easeFrom = g_drawnPose;
+                g_easeTime = 0.0f;
+                g_easeLength = std::fmax(g_easeBackSeconds.load(std::memory_order_relaxed), 0.05f);
+                g_armedUntilMs = 0;
+                GH_TRACE(Game, "camera: easing back over " << g_easeLength << " s");
+            }
+            Pose drawn = game;
+            if (g_easeTime >= 0.0f)
+            {
+                g_easeTime += dt;
+                const float x = std::fmin(g_easeTime / g_easeLength, 1.0f);
+                const float s = x * x * (3.0f - 2.0f * x);
+                if (x >= 1.0f)
+                    g_easeTime = -1.0f;
+                else
+                {
+                    drawn = blendPose(g_easeFrom, game, s);
+                    writePose(rdram, camera, drawn);
+                }
+            }
+            g_drawnPose = drawn;
+            g_haveDrawn = true;
+        }
+
+        // ---- See-through oval -----------------------------------------------------------------------------------------
+        //
+        // Things between the camera and Gene (walls, pillars, the stalls in town) dissolve in an oval round him, so he
+        // and the enemies about him stay in view. Every frame, once cCamera_update has the player camera's world-to-screen
+        // matrix (+0x00 = view-screen * view, 0x1388F0, s4 = the camera), Gene's middle (0.95 m above his feet, +0xF0 of
+        // the player) is projected to the screen; the oval's radii are SeeThroughWidth / SeeThroughHeight metres at his
+        // distance, and two points in front of him toward the eye give the depths where dissolving starts
+        // (SeeThroughMargin) and where it is full (0.8 m further). The renderer dissolves the depth-tested triangles
+        // nearer than that inside the oval (pcsx2gs: pcsx2gs_set_option "see_through", GSRendererHW::ApplySeeThrough,
+        // tfx.fx SeeThroughHides: an ordered dither, densest in the middle, thinning over the soft edge). Gene, the
+        // enemies round him and the floor at his feet are at his depth or behind it; the HUD has no depth test.
+        // Only while the player camera's own logic runs (gameplay: not in cutscenes); the DLL turns the oval off by
+        // itself when no frame brings one.
+        constexpr uint32_t kPlayerPointer = 0x747A94u;
+        std::atomic<bool> g_seeThrough{true};
+        std::atomic<float> g_seeWidth{1.6f};     // metres, half-width
+        std::atomic<float> g_seeHeight{1.3f};    // metres, half-height
+        std::atomic<float> g_seeMargin{1.0f};    // metres in front of Gene
+        std::atomic<float> g_seeStrength{100.0f}; // percent
+        std::atomic<float> g_seeSoftness{40.0f};  // percent of the radius
+        bool g_seeSent = false;                   // game thread: an oval went to the renderer last frame
+        std::atomic<float> g_seeReadout[4] = {};  // centre x, y, radii x, y (GS pixels), for the menu
+
+        struct Clip
+        {
+            float x, y, z, w;
+        };
+
+        Clip project(const float *m, const float *p)
+        {
+            Clip c;
+            c.x = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12];
+            c.y = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13];
+            c.z = m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14];
+            c.w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
+            return c;
+        }
+
+        void seeThroughOff()
+        {
+            if (g_seeSent)
+                GSPcsx2Backend::SetOption("see_through", "0");
+            g_seeSent = false;
+        }
+
+        // 0x1388F0 (cCamera_update, lui at,0x4233 after MtxMultiply; s4 = the camera)
+        void cameraMatrixReady(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t camera = GPR_U32(ctx, 20);
+            if (camera != g_playerCamera.load(std::memory_order_relaxed))
+                return;
+            const auto valid = [](uint32_t p) { return p >= 0x100000u && p < PS2_RAM_SIZE - 0x1000u; };
+            if (!g_seeThrough.load(std::memory_order_relaxed) || !valid(camera) ||
+                steadyMs() - g_playerCameraMs.load(std::memory_order_relaxed) > 100)
+            {
+                seeThroughOff();
+                return;
+            }
+            uint32_t player, at;
+            std::memcpy(&player, rdram + kPlayerPointer, sizeof(player));
+            if (!valid(player))
+            {
+                seeThroughOff();
+                return;
+            }
+            std::memcpy(&at, rdram + player + 0xF0u, sizeof(at));
+            if (!valid(at))
+            {
+                seeThroughOff();
+                return;
+            }
+            float m[16];
+            std::memcpy(m, rdram + camera, sizeof(m));
+            const float centre[3] = {loadFloat(rdram, at), loadFloat(rdram, at + 4u) + 0.95f, loadFloat(rdram, at + 8u)};
+            float eye[3];
+            for (int i = 0; i < 3; ++i)
+                eye[i] = loadFloat(rdram, camera + 0x210u + 4u * i);
+            float toEye[3] = {eye[0] - centre[0], eye[1] - centre[1], eye[2] - centre[2]};
+            const float distance = length3(toEye);
+            const float margin = g_seeMargin.load(std::memory_order_relaxed);
+            const Clip c = project(m, centre);
+            if (!(c.w > 0.2f) || !(distance > margin + 0.2f) || !std::isfinite(c.x + c.y + c.z))
+            {
+                seeThroughOff();
+                return;
+            }
+            for (float &v : toEye)
+                v /= distance;
+            const float flat = std::sqrt(toEye[0] * toEye[0] + toEye[2] * toEye[2]);
+            const float side[3] = {flat > 1e-3f ? -toEye[2] / flat : 1.0f, 0.0f, flat > 1e-3f ? toEye[0] / flat : 0.0f};
+            const float sidePoint[3] = {centre[0] + side[0], centre[1], centre[2] + side[2]};
+            const float upPoint[3] = {centre[0], centre[1] + 1.0f, centre[2]};
+            const Clip cs = project(m, sidePoint), cu = project(m, upPoint);
+            if (!(cs.w > 0.05f) || !(cu.w > 0.05f))
+            {
+                seeThroughOff();
+                return;
+            }
+            const float cx = c.x / c.w, cy = c.y / c.w;
+            const float perMetreX = std::hypot(cs.x / cs.w - cx, cs.y / cs.w - cy);
+            const float perMetreY = std::hypot(cu.x / cu.w - cx, cu.y / cu.w - cy);
+            const float rx = g_seeWidth.load(std::memory_order_relaxed) * perMetreX;
+            const float ry = g_seeHeight.load(std::memory_order_relaxed) * perMetreY;
+            const float full = std::fmin(margin + 0.8f, distance - 0.15f);
+            const float startPoint[3] = {centre[0] + toEye[0] * margin, centre[1] + toEye[1] * margin, centre[2] + toEye[2] * margin};
+            const float fullPoint[3] = {centre[0] + toEye[0] * full, centre[1] + toEye[1] * full, centre[2] + toEye[2] * full};
+            const Clip c0 = project(m, startPoint), c1 = project(m, fullPoint);
+            if (!(c0.w > 0.01f) || !(c1.w > 0.01f) || !(rx > 1.0f) || !(ry > 1.0f) || rx > 20000.0f || ry > 20000.0f)
+            {
+                seeThroughOff();
+                return;
+            }
+            char text[192];
+            std::snprintf(text, sizeof(text), "%.2f %.2f %.2f %.2f %.3f %.3f %.3f %.3f", cx, cy, rx, ry, c0.z / c0.w,
+                          c1.z / c1.w, g_seeStrength.load(std::memory_order_relaxed) / 100.0f,
+                          g_seeSoftness.load(std::memory_order_relaxed) / 100.0f);
+            if (!g_seeSent)
+                GH_TRACE(Game, "see-through on: " << text);
+            g_seeSent = GSPcsx2Backend::SetOption("see_through", text);
+            g_seeReadout[0].store(cx - 2048.0f, std::memory_order_relaxed);
+            g_seeReadout[1].store(cy - 2048.0f, std::memory_order_relaxed);
+            g_seeReadout[2].store(rx, std::memory_order_relaxed);
+            g_seeReadout[3].store(ry, std::memory_order_relaxed);
+        }
 
         // ---- Enemies' cones ---------------------------------------------------------------------------------------
 
@@ -300,6 +600,19 @@ namespace godhand
             g_status = std::move(text);
         }
 
+        // [Video] SeeThrough*, CameraEaseBack*: read straight from godhand.ini (at install and on Revert).
+        void loadExtras(const IniFile &ini)
+        {
+            g_seeThrough = ini.getBool("Video", "SeeThrough", true);
+            g_seeWidth = iniValue(ini, "Video", "SeeThroughWidth", 1.6f, 0.3f, 6.0f);
+            g_seeHeight = iniValue(ini, "Video", "SeeThroughHeight", 1.3f, 0.3f, 6.0f);
+            g_seeMargin = iniValue(ini, "Video", "SeeThroughMargin", 1.0f, 0.2f, 5.0f);
+            g_seeStrength = iniValue(ini, "Video", "SeeThroughStrength", 100.0f, 0.0f, 100.0f);
+            g_seeSoftness = iniValue(ini, "Video", "SeeThroughSoftness", 40.0f, 2.0f, 100.0f);
+            g_easeBackOn = ini.getBool("Video", "CameraEaseBack", true);
+            g_easeBackSeconds = iniValue(ini, "Video", "CameraEaseBackSeconds", 0.5f, 0.05f, 2.0f);
+        }
+
         void saveToIni()
         {
             IniFile ini;
@@ -315,6 +628,14 @@ namespace godhand
             ini.setBool("Game", "EnemiesFollowView", g_enemyView.load());
             ini.setBool("Video", "DepthOfField", g_depthOfField.load());
             ini.setBool("Video", "PreciseDepth", g_preciseDepth.load());
+            ini.setBool("Video", "SeeThrough", g_seeThrough.load());
+            ini.set("Video", "SeeThroughWidth", number(g_seeWidth.load()));
+            ini.set("Video", "SeeThroughHeight", number(g_seeHeight.load()));
+            ini.set("Video", "SeeThroughMargin", number(g_seeMargin.load()));
+            ini.set("Video", "SeeThroughStrength", number(g_seeStrength.load()));
+            ini.set("Video", "SeeThroughSoftness", number(g_seeSoftness.load()));
+            ini.setBool("Video", "CameraEaseBack", g_easeBackOn.load());
+            ini.set("Video", "CameraEaseBackSeconds", number(g_easeBackSeconds.load()));
             if (!ini.save())
             {
                 setStatus("Could not write godhand.ini.");
@@ -339,6 +660,7 @@ namespace godhand
             g_enemyView = ini.getBool("Game", "EnemiesFollowView", true);
             g_depthOfField = ini.getBool("Video", "DepthOfField", true);
             g_preciseDepth = ini.getBool("Video", "PreciseDepth", true);
+            loadExtras(ini);
             GSPcsx2Backend::SetOption("precise_depth", g_preciseDepth.load() ? "1" : "0");
             GSPcsx2Backend::SetOption("dof", g_depthOfField.load() ? "1" : "0");
             setStatus("Back to the values in godhand.ini.");
@@ -393,6 +715,28 @@ namespace godhand
             ui->text_disabled("Their facing cones widen by as much as the picture reaches further round Gene, so the "
                               "ones you can see at the edges join in as they did at the PS2's edges.");
 
+            ui->separator_text("See-through");
+            int see = g_seeThrough.load() ? 1 : 0;
+            if (ui->checkbox("Dissolve what stands between the camera and Gene##see", &see))
+                g_seeThrough = see != 0;
+            ui->begin_disabled(see == 0);
+            slider(ui, "Oval half-width##seew", g_seeWidth, 0.3f, 4.0f, "%.2f m");
+            slider(ui, "Oval half-height##seeh", g_seeHeight, 0.3f, 4.0f, "%.2f m");
+            slider(ui, "Starts this far in front of Gene##seem", g_seeMargin, 0.2f, 3.0f, "%.2f m");
+            slider(ui, "Strength##sees", g_seeStrength, 0.0f, 100.0f, "%.0f%%");
+            slider(ui, "Soft edge##seesoft", g_seeSoftness, 2.0f, 100.0f, "%.0f%%");
+            ui->end_disabled();
+            ui->text_disabled("Sizes are in metres round Gene's middle. Strength 100% = gone in the middle; the soft "
+                              "edge is the part of the oval over which it fades out.");
+
+            ui->separator_text("Ease back");
+            int ease = g_easeBackOn.load() ? 1 : 0;
+            if (ui->checkbox("Glide back after the game moves the camera##ease", &ease))
+                g_easeBackOn = ease != 0;
+            ui->begin_disabled(ease == 0);
+            slider(ui, "Glide time##easet", g_easeBackSeconds, 0.1f, 1.5f, "%.2f s");
+            ui->end_disabled();
+
             ui->separator_text("Now");
             char line[256];
             const float scale = coneScale(3.0f);
@@ -402,6 +746,12 @@ namespace godhand
             std::snprintf(line, sizeof(line), "Enemies at 3 m: cones x%.2f (the 60 deg wedge is %.0f deg, DIE's 90 deg lunge %.0f deg)",
                           scale, scaledCone(60.0f * kDegToRad, 3.0f) / kDegToRad, scaledCone(90.0f * kDegToRad, 3.0f) / kDegToRad);
             ui->text(line);
+            if (g_seeThrough.load())
+            {
+                std::snprintf(line, sizeof(line), "See-through oval: centre %.0f, %.0f, radii %.0f x %.0f (game pixels, 512 x 448)",
+                              g_seeReadout[0].load() + 256.0f, g_seeReadout[1].load() + 224.0f, g_seeReadout[2].load(), g_seeReadout[3].load());
+                ui->text_disabled(line);
+            }
 
             ui->separator_text("godhand.ini");
             if (ui->button("Save"))
@@ -487,7 +837,14 @@ namespace godhand
             const char *dof = std::getenv("PS2X_PCSX2_DOF");
             g_depthOfField = !(dof && *dof == '0'); // the DLL reads the same variable when it opens
         }
+        {
+            IniFile ini;
+            if (!g_iniPath.empty() && ini.load(g_iniPath))
+                loadExtras(ini);
+        }
         g_mul = fovFactor();
+        ps2xRegisterHostHook("gh_cam_update", &cameraUpdateStart);
+        ps2xRegisterHostHook("gh_cam_matrix", &cameraMatrixReady);
         ps2xRegisterHostHook("gh_fov_ease_a", &fovEaseA);
         ps2xRegisterHostHook("gh_fov_ease_b", &fovEaseB);
         ps2xRegisterHostHook("gh_fov_reset", &fovReset);
@@ -502,7 +859,9 @@ namespace godhand
         GH_INFO(Game, "camera: field of view " << g_fovPercent.load() << "%, " << g_fightPercent.load()
                                                << "% in fights; comes in " << g_closerPercent.load() << "%, tilt "
                                                << g_tiltDegrees.load() << " degrees; enemies follow the view: "
-                                               << (g_enemyView.load() ? "on" : "off"));
+                                               << (g_enemyView.load() ? "on" : "off") << "; see-through: "
+                                               << (g_seeThrough.load() ? "on" : "off") << "; ease back: "
+                                               << (g_easeBackOn.load() ? "on" : "off"));
         modern::install(); // the Control Style (its Controls tab comes after Camera and Graphics)
 #if defined(GODHAND_HAS_GS_MENU)
         static bool s_panel = false;
