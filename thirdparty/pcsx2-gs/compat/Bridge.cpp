@@ -18,6 +18,11 @@
 #include <string_view>
 #include <vector>
 
+namespace pcsx2gs
+{
+    extern std::atomic<uint32_t> g_frame; // below; GSRendererHW::ApplyPreciseDepth starts its lines over each frame
+}
+
 extern Pcsx2Config EmuConfig;
 
 namespace
@@ -256,6 +261,7 @@ namespace
         std::memcpy(g_regs + 0x1040, &regs->busdir, 8);
         std::memcpy(g_regs + 0x1080, &regs->siglblid, 8);
         // As PCSX2's MTGS: CSR.FIELD (bit 13) picks the field.
+        pcsx2gs::g_frame.fetch_add(1u, std::memory_order_relaxed);
         GSvsync((regs->csr & 0x2000u) ? 0u : 1u, true);
         WritePresentStats();
     }
@@ -375,7 +381,8 @@ extern "C" __declspec(dllexport) const Pcsx2GsApi *pcsx2gs_get_api(uint32_t vers
 }
 
 // Options the port changes while the game runs (the in-game menu), any thread; unknown keys are ignored:
-//   dof=0/1  the game's depth-of-field composite drawn (1, the default) or skipped (God Hand, GSRendererHW.cpp)
+//   dof=0/1            the game's depth-of-field composite drawn (1, the default) or skipped (GSRendererHW.cpp)
+//   precise_depth=0/1  depth from Q for perspective-textured draws (1, the default; GSRendererHW::ApplyPreciseDepth)
 namespace pcsx2gs
 {
     // At start: PS2X_PCSX2_DOF=0 or PS2X_PCSX2_SKIP_DOF=1 turn it off.
@@ -385,6 +392,13 @@ namespace pcsx2gs
         const char *skip = std::getenv("PS2X_PCSX2_SKIP_DOF");
         return !((dof && *dof == '0') || (skip && *skip == '1'));
     }()};
+    std::atomic<uint32_t> g_frame{0}; // fields presented (Vsync), for GSRendererHW::ApplyPreciseDepth's per-frame lines
+    // Precise depth (GSRendererHW::ApplyPreciseDepth): PS2X_PCSX2_PRECISE_DEPTH=0 turns it off.
+    std::atomic<bool> g_preciseDepth{[]
+    {
+        const char *value = std::getenv("PS2X_PCSX2_PRECISE_DEPTH");
+        return !(value && *value == '0');
+    }()};
 }
 
 extern "C" __declspec(dllexport) void pcsx2gs_set_option(const char *key, const char *value)
@@ -393,6 +407,8 @@ extern "C" __declspec(dllexport) void pcsx2gs_set_option(const char *key, const 
         return;
     if (std::strcmp(key, "dof") == 0)
         pcsx2gs::g_drawDof.store(*value != '0', std::memory_order_relaxed);
+    else if (std::strcmp(key, "precise_depth") == 0)
+        pcsx2gs::g_preciseDepth.store(*value != '0', std::memory_order_relaxed);
 }
 
 // The aspect ratio while the game runs (0 = 4:3, 1 = 16:9, 2 = fill the window), read at every present: the port uses

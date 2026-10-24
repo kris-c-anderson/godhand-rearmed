@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include <atomic>
+#include <algorithm>
+#include <cmath>
 #include "GS/Renderers/HW/GSRendererHW.h"
 #include "GS/Renderers/HW/GSTextureReplacements.h"
 #include "GS/GSGL.h"
@@ -17,7 +19,8 @@
 
 namespace pcsx2gs
 {
-	extern std::atomic<bool> g_drawDof; // compat/Bridge.cpp: pcsx2gs_set_option("dof")
+	extern std::atomic<bool> g_drawDof;      // compat/Bridge.cpp: pcsx2gs_set_option("dof")
+	extern std::atomic<bool> g_preciseDepth; // compat/Bridge.cpp: pcsx2gs_set_option("precise_depth")
 }
 
 using PS_ATST  = GSShader::PS_ATST;
@@ -5786,6 +5789,172 @@ void GSRendererHW::SetupIA(float target_scale, float sx, float sy, bool req_vert
 	m_conf.nindices = m_index->tail;
 }
 
+// pcsx2gs (God Hand): precise depth for perspective-textured draws.
+//
+// God Hand draws into a 16-bit depth buffer with a projection whose depth falls as 1/distance from a near plane at
+// 0.1 m (zmax 65535): most of a scene sits between depth 30 and 300, one step is 6 cm at 20 m and 55 cm at 60 m, and
+// surfaces that meet or lie close together in the distance cut into each other in jagged steps that jump as the
+// camera moves (on the PS2 too, under a pixel there). The integer depth is all the GS gets, but a perspective-
+// textured vertex also carries Q = 1/w in full float precision, and the projection makes the depth an exact line of
+// it: Z = A + B * Q (a frame of the town: one line fits 1898 of its 1903 such draws within one depth step).
+//
+// The lines are learned per frame: every draw whose depths span 64 steps or more and fit their own line within one
+// step adds its vertices to the line it belongs to (up to four, for the cameras and projections a frame uses); at the
+// next frame each line is refitted from everything it gathered. A draw (triangles, STQ, a depth test, a 16-bit depth
+// buffer) whose every vertex lies within one step of a known line gets that line's depth with 8 bits of fraction (Z
+// * 256; the vertex shader scales back by depth_scale), so neighbouring draws stay consistent with each other. The
+// depth buffer then holds the same depths with fractions and the comparisons resolve where the integers tied; memory
+// sees the same 16-bit values as before. Anything else (no line fits, depths past 0xFFFF) is left as it was.
+namespace pcsx2gs
+{
+	extern std::atomic<uint32_t> g_frame; // compat/Bridge.cpp: Vsync
+}
+
+namespace
+{
+	struct DepthLine
+	{
+		double a = 0.0, b = 0.0;
+		bool valid = false;
+		double n = 0.0, sq = 0.0, sz = 0.0, sqq = 0.0, sqz = 0.0; // this frame's vertices
+		u32 idle = 0; // frames without a draw
+	};
+	DepthLine s_depth_lines[4];
+	u32 s_depth_frame = 0xFFFFFFFFu;
+
+	bool FitLine(double n, double sq, double sz, double sqq, double sqz, double& a, double& b)
+	{
+		const double mq = sq / n, mz = sz / n;
+		const double var = sqq / n - mq * mq;
+		if (!(var > 0.0))
+			return false;
+		b = (sqz / n - mq * mz) / var;
+		a = mz - b * mq;
+		return b > 0.0;
+	}
+}
+
+void GSRendererHW::ApplyPreciseDepth()
+{
+	if (!pcsx2gs::g_preciseDepth.load(std::memory_order_relaxed))
+		return;
+
+	const u32 frame = pcsx2gs::g_frame.load(std::memory_order_relaxed);
+	if (frame != s_depth_frame)
+	{
+		s_depth_frame = frame;
+		for (DepthLine& line : s_depth_lines)
+		{
+			double a, b;
+			if (line.n >= 32.0 && FitLine(line.n, line.sq, line.sz, line.sqq, line.sqz, a, b))
+			{
+				line.a = a;
+				line.b = b;
+				line.valid = true;
+				line.idle = 0;
+			}
+			else if (++line.idle > 30)
+				line.valid = false;
+			line.n = line.sq = line.sz = line.sqq = line.sqz = 0.0;
+		}
+	}
+
+	if (!PRIM->TME || PRIM->FST || m_vt.m_primclass != GS_TRIANGLE_CLASS || !m_conf.ds || !m_cached_ctx.DepthRead())
+		return;
+	if (GSLocalMemory::m_psm[m_cached_ctx.ZBUF.PSM].fmt != 2) // 16-bit depth only
+		return;
+	const u32 n = m_conf.nverts;
+	if (n < 3 || !m_conf.verts)
+		return;
+
+	double sq = 0.0, sz = 0.0, sqq = 0.0, sqz = 0.0;
+	u32 zlo = 0xFFFFFFFFu, zhi = 0;
+	for (u32 i = 0; i < n; i++)
+	{
+		const GSVertex& v = m_conf.verts[i];
+		const float q = v.RGBAQ.Q;
+		if (v.XYZ.Z > 0xFFFFu || !(q > 0.0f) || !std::isfinite(q))
+			return;
+		sq += q;
+		sz += v.XYZ.Z;
+		sqq += static_cast<double>(q) * q;
+		sqz += static_cast<double>(q) * v.XYZ.Z;
+		zlo = std::min(zlo, v.XYZ.Z);
+		zhi = std::max(zhi, v.XYZ.Z);
+	}
+	const auto fits = [this, n](double a, double b) {
+		for (u32 i = 0; i < n; i++)
+		{
+			const GSVertex& v = m_conf.verts[i];
+			if (std::abs(static_cast<double>(v.XYZ.Z) - (a + b * v.RGBAQ.Q)) > 1.0)
+				return false;
+		}
+		return true;
+	};
+
+	// Its own line, when its depths span enough to tell.
+	double own_a = 0.0, own_b = 0.0;
+	const bool own = zhi - zlo >= 64 && FitLine(n, sq, sz, sqq, sqz, own_a, own_b) && fits(own_a, own_b);
+
+	DepthLine* line = nullptr;
+	for (DepthLine& candidate : s_depth_lines)
+	{
+		if (candidate.valid && fits(candidate.a, candidate.b))
+		{
+			line = &candidate;
+			break;
+		}
+	}
+	if (!line && own)
+	{
+		// A new line (a new camera or projection): start it from this draw.
+		for (DepthLine& candidate : s_depth_lines)
+		{
+			if (!candidate.valid)
+			{
+				line = &candidate;
+				break;
+			}
+		}
+		if (!line)
+			line = &s_depth_lines[3];
+		*line = DepthLine{};
+		line->a = own_a;
+		line->b = own_b;
+		line->valid = true;
+	}
+	if (!line)
+		return;
+	if (own)
+	{
+		line->n += n;
+		line->sq += sq;
+		line->sz += sz;
+		line->sqq += sqq;
+		line->sqz += sqz;
+	}
+	line->idle = 0;
+
+	// Work on the draw's own copy of the vertices (m_vertex->buff keeps the game's, strips carry over from it).
+	if (m_conf.verts == m_vertex->buff)
+	{
+		memcpy(m_draw_vertex.buff, m_vertex->buff, sizeof(GSVertex) * n);
+		memcpy(m_draw_index.buff, m_index->buff, sizeof(u16) * m_conf.nindices);
+		m_conf.verts = m_draw_vertex.buff;
+		m_conf.indices = m_draw_index.buff;
+	}
+	GSVertex* verts = const_cast<GSVertex*>(m_conf.verts);
+	for (u32 i = 0; i < n; i++)
+	{
+		const double z = (line->a + line->b * verts[i].RGBAQ.Q) * 256.0;
+		verts[i].XYZ.Z = static_cast<u32>(std::clamp(z + 0.5, 0.0, 16777215.0));
+	}
+	m_conf.cb_vs.depth_scale = 1.0f / 256.0f;
+	if (m_conf.cb_vs.max_depth != 0xFFFFFFFFu)
+		m_conf.cb_vs.max_depth = m_conf.cb_vs.max_depth * 256u + 255u;
+	m_conf.ps.zfloor = false; // the fractions are the point
+}
+
 void GSRendererHW::EmulateZbuffer(const GSTextureCache::Target* ds)
 {
 	if (ds && m_cached_ctx.TEST.ZTE)
@@ -5816,6 +5985,7 @@ void GSRendererHW::EmulateZbuffer(const GSTextureCache::Target* ds)
 	const bool flat_z = m_vt.m_eq.z || m_vt.m_primclass == GS_POINT_CLASS || m_vt.m_primclass == GS_SPRITE_CLASS;
 
 	m_conf.cb_vs.max_depth = 0xFFFFFFFF;
+	m_conf.cb_vs.depth_scale = 1.0f;
 	m_conf.cb_ps.TA_MaxDepth_Af.z = 0.0f;
 	m_conf.ps.zclamp = false;
 
@@ -9696,6 +9866,7 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 	HandleFlatShadedVertices();
 
 	SetupIA(rtscale, vs_scale_x, vs_scale_y, m_channel_shuffle_width != 0, no_rt);
+	ApplyPreciseDepth();
 
 	if (m_conf.ds && m_conf.ps.IsFeedbackLoopDepth() && !g_gs_device->Features().depth_feedback && !m_conf.ps.HasDepthROV())
 	{

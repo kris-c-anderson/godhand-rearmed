@@ -1050,9 +1050,11 @@ struct alignas(16) GSHWDrawConfig
 		GSVector2 point_size;
 		u32 max_depth;
 		float line_aa1_width;
+		float depth_scale; // pcsx2gs (God Hand): vertex Z units per GS depth unit, 1/256 for GSRendererHW::ApplyPreciseDepth
 		__fi VSConstantBuffer()
 		{
 			memset(static_cast<void*>(this), 0, sizeof(*this));
+			depth_scale = 1.0f;
 		}
 		__fi VSConstantBuffer(const VSConstantBuffer& other)
 		{

@@ -4,11 +4,13 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 24, 2026
 
-- **Depth precision** (`[Video] DepthPrecision`, default x4; F2 > Graphics live): the jagged, shifting slivers where
-  distant surfaces meet (a pillar against a ledge) are the game's own z-fighting: its 16-bit depth falls as
-  1/distance from a near plane at 0.1 m, so a depth step is 6 cm at 20 m and 55 cm at 60 m (the same in PCSX2; under
-  a pixel at the PS2's resolution). The gameplay camera's near plane moves out by the factor (0.4 m at x4: four times
-  the precision everywhere), and the field-of-view option no longer shrinks the depth range.
+- **Precise depth** (`[Video] PreciseDepth`, on; F2 > Graphics live): the jagged, shifting slivers where distant
+  surfaces meet (a pillar against a ledge) are the game's own z-fighting: its 16-bit depth falls as 1/distance from a
+  near plane at 0.1 m, so a depth step is 6 cm at 20 m and 55 cm at 60 m (the same in PCSX2; under a pixel at the
+  PS2's resolution). The renderer now takes the depth of perspective-textured surfaces from their Q (1/w, a full
+  float), which the projection makes an exact line of the integer depth, keeping 8 bits of fraction. The field-of-view
+  option no longer shrinks the game's depth range. (A first try moved the near plane out instead; the game culls
+  what comes nearer than it, so walls and floors near the camera vanished. Reverted.)
 - **Modern controls:** Auto's fight range 3 m; free camera 200 degrees a second by default; it can look further up,
   as far as keeps it 0.35 m above Gene's feet.
 - **Control Style: Modern** (`[Game] ControlStyle=modern`, Gameplay, F2 > Controls): the right stick turns a free

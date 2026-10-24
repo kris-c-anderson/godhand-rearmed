@@ -67,6 +67,7 @@ namespace godhand
         std::atomic<float> g_tiltDegrees{0.0f};
         std::atomic<bool> g_enemyView{true};
         std::atomic<bool> g_depthOfField{true}; // [Video] DepthOfField (PS2X_PCSX2_DOF), the Graphics tab
+        std::atomic<bool> g_preciseDepth{true}; // [Video] PreciseDepth (PS2X_PCSX2_PRECISE_DEPTH), the Graphics tab
         float g_aspect = kNativeAspect;
         std::filesystem::path g_iniPath;
 
@@ -96,25 +97,19 @@ namespace godhand
 
         float g_lastDistance = 4.0f; // the eye's distance from the look point last update (orbitDistance)
 
-        // Depth precision. cCamera_update builds the projection with sceVu0ViewScreenMatrix (func_0030AA40, called at
+        // Depth range. cCamera_update builds the projection with sceVu0ViewScreenMatrix (func_0030AA40, called at
         // 0x138864): zmin 1, zmax 2031584 / fov (65535 at the player camera's 31 degrees), near 0.1, far 600, into a
-        // 16-bit depth buffer (Z16S). Depth then falls as 1/distance: 65535 * 0.1 / d, about 330 at 20 m and 110 at
-        // 60 m, so one depth step is 6 cm at 20 m and 55 cm at 60 m. Surfaces that meet or lie close together at a
-        // distance (a pillar against a ledge) then cut into each other in steps that jump as the camera moves: the
-        // game's own z-fighting, under a pixel on the PS2, plain at high resolutions. The hook before 0x13884C (f18 =
-        // zmax / 2, f19 = near; s4 = the camera) raises the player camera's near distance by DepthPrecision (x4 = 0.4
-        // m: four times the steps everywhere; only what is nearer than that to the camera loses its depth order) and
-        // undoes the field-of-view option's shrinking of zmax. Cutscene and other cameras keep theirs. The depth of
-        // field reads the depth's high byte through a 256-entry ramp, which is nearly flat over the far range where
-        // most of the scene sits, so its blur hardly changes.
-        std::atomic<float> g_depthPrecision{4.0f};
+        // 16-bit depth buffer (Z16S): depth falls as 1/distance, coarse in the distance (the renderer makes it precise
+        // again from Q: pcsx2gs, GSRendererHW::ApplyPreciseDepth). The field-of-view option would shrink zmax with the
+        // wider fov; the hook before 0x13884C (f18 = zmax / 2; s4 = the camera) puts the PS2's range back for the
+        // player camera. (Moving the near plane out for precision instead was tried: the game culls what comes nearer
+        // than it, so walls and floors near the camera vanished.)
         std::atomic<uint32_t> g_playerCamera{0};
 
         void cameraDepth(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
             if (GPR_U32(ctx, 20) != g_playerCamera.load(std::memory_order_relaxed))
                 return;
-            ctx->f[19] *= std::fmin(std::fmax(g_depthPrecision.load(std::memory_order_relaxed), 1.0f), 10.0f);
             ctx->f[18] *= std::fmax(g_mul, 0.25f);
         }
 
@@ -326,7 +321,7 @@ namespace godhand
             ini.set("Video", "CameraTilt", number(g_tiltDegrees.load()));
             ini.setBool("Game", "EnemiesFollowView", g_enemyView.load());
             ini.setBool("Video", "DepthOfField", g_depthOfField.load());
-            ini.set("Video", "DepthPrecision", number(g_depthPrecision.load()));
+            ini.setBool("Video", "PreciseDepth", g_preciseDepth.load());
             if (!ini.save())
             {
                 setStatus("Could not write godhand.ini.");
@@ -350,7 +345,8 @@ namespace godhand
             g_tiltDegrees = iniValue(ini, "Video", "CameraTilt", 0.0f, -30.0f, 30.0f);
             g_enemyView = ini.getBool("Game", "EnemiesFollowView", true);
             g_depthOfField = ini.getBool("Video", "DepthOfField", true);
-            g_depthPrecision = iniValue(ini, "Video", "DepthPrecision", 4.0f, 1.0f, 10.0f);
+            g_preciseDepth = ini.getBool("Video", "PreciseDepth", true);
+            GSPcsx2Backend::SetOption("precise_depth", g_preciseDepth.load() ? "1" : "0");
             GSPcsx2Backend::SetOption("dof", g_depthOfField.load() ? "1" : "0");
             setStatus("Back to the values in godhand.ini.");
         }
@@ -445,12 +441,16 @@ namespace godhand
             ui->text_disabled("The game's blur of the distance: a small blurred copy of the picture blended over it by "
                               "depth. At high internal resolutions its edges show as dark, jagged fringes that "
                               "shimmer as the camera moves.");
-            ui->separator_text("Depth precision");
-            slider(ui, "Depth precision##depth", g_depthPrecision, 1.0f, 10.0f, "x%.1f");
-            ui->text_disabled("The game's 16-bit depth is coarse in the distance, so surfaces that meet or lie close "
-                              "together there cut into each other in jagged, shifting slivers (on the PS2 too, under "
-                              "a pixel). Higher = finer depth everywhere; only what is closer than 0.1 m times this to "
-                              "the camera loses its order. x1 = as on the PS2. Gameplay camera only.");
+            int precise = g_preciseDepth.load() ? 1 : 0;
+            if (ui->checkbox("Precise depth##precise", &precise))
+            {
+                g_preciseDepth = precise != 0;
+                if (!GSPcsx2Backend::SetOption("precise_depth", precise ? "1" : "0"))
+                    setStatus("This pcsx2gs.dll cannot switch it while playing: build again.");
+            }
+            ui->text_disabled("The game's 16-bit depth is coarse in the distance, so surfaces that meet there cut into "
+                              "each other in jagged, shifting slivers (on the PS2 too, under a pixel). On: the renderer "
+                              "takes each surface's exact depth from its texture perspective instead. Off: as the PS2.");
             ui->separator_text("godhand.ini");
             if (ui->button("Save##graphics"))
                 saveToIni();
@@ -489,7 +489,8 @@ namespace godhand
         {
             const char *text = std::getenv("GODHAND_ENEMY_VIEW");
             g_enemyView = !(text && *text == '0');
-            g_depthPrecision = envValue("GODHAND_DEPTH_PRECISION", 4.0f, 1.0f, 10.0f);
+            const char *precise = std::getenv("PS2X_PCSX2_PRECISE_DEPTH");
+            g_preciseDepth = !(precise && *precise == '0'); // the DLL reads the same variable when it opens
             const char *dof = std::getenv("PS2X_PCSX2_DOF");
             g_depthOfField = !(dof && *dof == '0'); // the DLL reads the same variable when it opens
         }

@@ -1646,6 +1646,7 @@ cbuffer cb0
 	float2 PointSize;
 	uint MaxDepth;
 	float LineAA1Width;
+	float DepthScale; // pcsx2gs: 1/256 for draws given precise depth (GSRendererHW::ApplyPreciseDepth)
 };
 
 #ifdef DX12
@@ -1675,7 +1676,7 @@ VS_OUTPUT vs_main(VS_INPUT input)
 	output.p = float4(input.p, input.z, 1.0f) - float4(0.05f, 0.05f, 0, 0);
 
 	output.p.xy = output.p.xy * float2(VertexScale.x, -VertexScale.y) - float2(VertexOffset.x, -VertexOffset.y);
-	output.p.z *= exp2(-32.0f);		// integer->float depth
+	output.p.z *= exp2(-32.0f) * DepthScale;		// integer->float depth (pcsx2gs: DepthScale for precise depth)
 
 	if(VS_TME)
 	{

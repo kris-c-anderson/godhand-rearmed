@@ -392,7 +392,7 @@ namespace
         {"video", "startfullscreen", "GODHAND_START_FULLSCREEN"},
         {"video", "posteffects", "PS2X_PCSX2_NATIVE_SCALING"},
         {"video", "depthoffield", "PS2X_PCSX2_DOF"},
-        {"video", "depthprecision", "GODHAND_DEPTH_PRECISION"},
+        {"video", "precisedepth", "PS2X_PCSX2_PRECISE_DEPTH"},
         {"launcher", "show", "GODHAND_LAUNCHER"},
     };
 
