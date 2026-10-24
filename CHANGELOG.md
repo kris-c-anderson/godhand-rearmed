@@ -5,12 +5,16 @@ Newest first. Each change is commented in the code where it was made.
 ## October 24, 2026
 
 - **Field of view** (Display > Field of view, `[Video] FieldOfView`, 100-150%): the gameplay camera's own fov is
-  scaled where the game eases it toward its target, so the projection, culling and the enemies' "on screen" test all
-  follow; cutscenes keep their framing.
-- **Enemies and widescreen:** the game decides whether an enemy is on screen with a frustum test built from the same
-  camera values the widescreen setting widens (and with a margin beyond the screen's edges), so enemies at the sides
-  of a wide screen behave as on screen. Nothing needed changing; documented with the addresses in
-  `src/godhand/widescreen.cpp`.
+  scaled where the game eases it toward its target, so the projection and culling follow; cutscenes keep their
+  framing. **Field of view in fights** (`FightFieldOfView`, default 100%): the same while the game's battle camera is
+  on, so fights are framed as on the PS2 by default; the camera eases between the two. **Camera distance**
+  (`CameraDistance`, default: comes all the way in) moves the camera toward Gene as the view widens so he keeps his
+  size instead of the view looking zoomed out; **Camera tilt** (`CameraTilt`, degrees) raises it to look down at him.
+- **How enemies pick their moment** is written up in `docs/enemy-ai.md`, from the code: a queue by distance to Gene,
+  a wedge of 60 degrees either side of the way he faces, lunges inside a cone that widens with the level gauge, and
+  Hard as the gauge locked at Level DIE. No camera test is involved, so widescreen and the field of view do not
+  change how enemies fight (an earlier note here said the game's on-screen test decided it; that test only decides
+  what is drawn).
 - **HD packs:** replacement textures keep to the alpha levels of the game's own texture (no more see-through enemies
   or grainy distance haze with packs made from edited dumps).
 

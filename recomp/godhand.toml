@@ -229,6 +229,45 @@ hook = "gh_fov_reset"
 flag = "fov"
 replace = true
 
+# Camera orbit at a wider field of view (widescreen.cpp): the pitch and distance loads where the eye is placed, in
+# func_00139FF8 (lwc1 $f4,0x410(s1) / lwc1 $f0,0x420(s1)), its second path (lwc1 $f0,0x410 / 0x420) and
+# cPlCamera_setCamUpdate (lwc1 $f4,0x410 / $f0,0x420).
+[[patches.hooks]]
+address = "0x0013A2A8"
+hook = "gh_cam_pitch_f4"
+flag = "fov"
+replace = true
+
+[[patches.hooks]]
+address = "0x0013A2F4"
+hook = "gh_cam_distance"
+flag = "fov"
+replace = true
+
+[[patches.hooks]]
+address = "0x0013B12C"
+hook = "gh_cam_pitch_f0"
+flag = "fov"
+replace = true
+
+[[patches.hooks]]
+address = "0x0013B15C"
+hook = "gh_cam_distance"
+flag = "fov"
+replace = true
+
+[[patches.hooks]]
+address = "0x0013BACC"
+hook = "gh_cam_pitch_f4"
+flag = "fov"
+replace = true
+
+[[patches.hooks]]
+address = "0x0013BB18"
+hook = "gh_cam_distance"
+flag = "fov"
+replace = true
+
 # Health gauge width (lui at,0x3F80 = 1.0).
 [[patches.hooks]]
 address = "0x0014300C"

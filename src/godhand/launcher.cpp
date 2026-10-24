@@ -42,6 +42,9 @@ namespace godhand::launcher
         constexpr Choice kWindowModes[] = {{"Window", "window"}, {"Fullscreen (borderless)", "fullscreen"}, {"Maximized window", "maximized"}};
         constexpr Choice kFovs[] = {{"100%: as on the PS2", "100"}, {"110%", "110"}, {"120%", "120"}, {"130%", "130"},
                                     {"140%", "140"}, {"150%", "150"}};
+        constexpr Choice kCameraDistances[] = {{"Stays: wider view looks zoomed out", "0"}, {"Halfway in", "50"},
+                                               {"Comes in: Gene keeps his size", "100"}};
+        constexpr Choice kCameraTilts[] = {{"None", "0"}, {"5 degrees", "5"}, {"10 degrees", "10"}, {"15 degrees", "15"}};
         constexpr Choice kWindowSizes[] = {{"Automatic (3/4 of the screen)", "auto"}, {"PS2 size", "native"}};
         constexpr Choice kResolutions[] = {{"1x  native (512x448)", "1"}, {"2x  1024x896", "2"}, {"3x  1536x1344", "3"},
                                            {"4x  2048x1792", "4"},        {"5x  2560x2240", "5"}, {"6x  3072x2688", "6"},
@@ -486,10 +489,22 @@ namespace godhand::launcher
                                  [](const char *id, std::string &value) { return choiceCombo(id, kMenuLayouts, value); });
                         ImGui::EndDisabled();
                         settingLabel("Field of view", "How much the gameplay camera shows, both ways (widescreen widens "
-                                                      "it sideways on its own). Enemies treat what the camera shows as on "
-                                                      "screen. Cutscenes keep their framing.");
+                                                      "it sideways on its own). Cutscenes keep their framing; enemies "
+                                                      "behave the same either way.");
                         iniCombo(state, "##fov", "Video", "FieldOfView", "100",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kFovs, value); });
+                        settingLabel("Field of view in fights", "The same while the game's battle camera is on (Gene "
+                                                                "has an enemy targeted). 100% frames fights as on the PS2.");
+                        iniCombo(state, "##fightfov", "Video", "FightFieldOfView", "100",
+                                 [](const char *id, std::string &value) { return choiceCombo(id, kFovs, value); });
+                        settingLabel("Camera distance", "At a wider field of view, how far the camera comes in toward "
+                                                        "Gene. Coming all the way in keeps him the size he is at 100%.");
+                        iniCombo(state, "##camdist", "Video", "CameraDistance", "100",
+                                 [](const char *id, std::string &value) { return choiceCombo(id, kCameraDistances, value); });
+                        settingLabel("Camera tilt", "At a wider field of view, the camera also rises and looks down at "
+                                                    "Gene by this much: more of the floor ahead, less sky.");
+                        iniCombo(state, "##camtilt", "Video", "CameraTilt", "0",
+                                 [](const char *id, std::string &value) { return choiceCombo(id, kCameraTilts, value); });
                         settingLabel("Window", "F11 switches between window and fullscreen while playing.");
                         {
                             std::string mode = state.ini.getBool("Video", "StartFullscreen", false)  ? "fullscreen"
