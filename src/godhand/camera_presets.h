@@ -18,5 +18,6 @@ namespace godhand
         {"As on the PS2", 100.0f, 100.0f, 100.0f, 0.0f},
         {"Wider", 125.0f, 100.0f, 100.0f, 0.0f},
         {"Widest", 150.0f, 110.0f, 100.0f, 5.0f},
+        {"Action", 153.0f, 117.0f, 45.1f, 14.88f}, // Kris's way to play
     };
 }
