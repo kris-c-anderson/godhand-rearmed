@@ -221,7 +221,7 @@ namespace godhand
         std::string number(float value)
         {
             char text[32];
-            std::snprintf(text, sizeof(text), "%g", std::round(value * 10.0f) / 10.0f);
+            std::snprintf(text, sizeof(text), "%g", std::round(value * 100.0f) / 100.0f);
             return text;
         }
 
