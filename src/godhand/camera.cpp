@@ -100,18 +100,12 @@ namespace godhand
         // Depth range. cCamera_update builds the projection with sceVu0ViewScreenMatrix (func_0030AA40, called at
         // 0x138864): zmin 1, zmax 2031584 / fov (65535 at the player camera's 31 degrees), near 0.1, far 600, into a
         // 16-bit depth buffer (Z16S): depth falls as 1/distance, coarse in the distance (the renderer makes it precise
-        // again from Q: pcsx2gs, GSRendererHW::ApplyPreciseDepth). The field-of-view option would shrink zmax with the
-        // wider fov; the hook before 0x13884C (f18 = zmax / 2; s4 = the camera) puts the PS2's range back for the
-        // player camera. (Moving the near plane out for precision instead was tried: the game culls what comes nearer
-        // than it, so walls and floors near the camera vanished.)
-        std::atomic<uint32_t> g_playerCamera{0};
-
-        void cameraDepth(uint8_t *, R5900Context *ctx, PS2Runtime *)
-        {
-            if (GPR_U32(ctx, 20) != g_playerCamera.load(std::memory_order_relaxed))
-                return;
-            ctx->f[18] *= std::fmax(g_mul, 0.25f);
-        }
+        // again from Q: pcsx2gs, GSRendererHW::ApplyPreciseDepth). A wider fov shrinks zmax with it, and that is left
+        // alone: every projection of the frame has to share one depth scale. Two fixes were tried and undone:
+        // - the near plane moved out: the game culls what comes nearer than it, so walls near the camera vanished;
+        // - zmax put back for the player camera (a hook before 0x13884C): part of the scenery is drawn with another
+        //   projection built from the same widened fov, so walls drawn with it lost the depth test to whatever stood
+        //   behind them (dump gif_11967: Z = 4285 Q for a wall, 6569 Q for the cabinet behind it).
 
         // Once per camera update: m eases toward the fight or the exploration value, and the readout is taken.
         // The camera preset the battle camera eases to (D_003BD540, an index into 0x3BD548/0x3BD5F0/0x3BD698): 0, 1
@@ -121,7 +115,6 @@ namespace godhand
 
         void easeMultiplier(const uint8_t *rdram, R5900Context *ctx, bool secondPath)
         {
-            g_playerCamera.store(GPR_U32(ctx, 17), std::memory_order_relaxed);
             int32_t preset;
             std::memcpy(&preset, rdram + cameraAt(ctx, 0x51Cu), sizeof(preset));
             const bool battle = preset > 0;
@@ -502,7 +495,6 @@ namespace godhand
         ps2xRegisterHostHook("gh_cam_pitch_f0", &orbitPitchF0);
         ps2xRegisterHostHook("gh_cam_distance", &orbitDistanceF0);
         ps2xRegisterHostHook("gh_cam_yaw", &orbitYaw);
-        ps2xRegisterHostHook("gh_cam_depth", &cameraDepth);
         ps2xRegisterHostHook("gh_em_wedge", &enemyWedge);
         ps2xRegisterHostHook("gh_em_lunge", &enemyLunge);
         ps2xSetPatchFlag("fov", true);

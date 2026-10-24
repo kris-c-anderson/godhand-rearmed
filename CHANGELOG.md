@@ -8,9 +8,14 @@ Newest first. Each change is commented in the code where it was made.
   surfaces meet (a pillar against a ledge) are the game's own z-fighting: its 16-bit depth falls as 1/distance from a
   near plane at 0.1 m, so a depth step is 6 cm at 20 m and 55 cm at 60 m (the same in PCSX2; under a pixel at the
   PS2's resolution). The renderer now takes the depth of perspective-textured surfaces from their Q (1/w, a full
-  float), which the projection makes an exact line of the integer depth, keeping 8 bits of fraction. The field-of-view
-  option no longer shrinks the game's depth range. (A first try moved the near plane out instead; the game culls
-  what comes nearer than it, so walls and floors near the camera vanished. Reverted.)
+  float), which the projection makes an exact line of the integer depth, keeping 8 bits of fraction. (A first try
+  moved the near plane out instead; the game culls what comes nearer than it, so walls and floors near the camera
+  vanished. Reverted.)
+- **Walls no longer vanish near the camera, and things behind them no longer show through** (with a wider field of
+  view): the game's depth range was put back for the player camera's projection only, but part of the scenery is
+  drawn with a second projection built from the same widened view, so the two disagreed by the field-of-view factor
+  and a near wall could lose to a cabinet behind it. Every projection keeps the game's own range again (the wider
+  view shrinks it, as before); precise depth makes up the precision.
 - **Modern controls:** Auto's fight range 3 m; free camera 200 degrees a second by default; it can look further up,
   as far as keeps it 0.35 m above Gene's feet.
 - **Control Style: Modern** (`[Game] ControlStyle=modern`, Gameplay, F2 > Controls): the right stick turns a free
