@@ -11,9 +11,14 @@ Newest first. Each change is commented in the code where it was made.
   with the camera's own matrix every frame (camera.cpp, hook in cCamera_update) and the renderer dissolves the
   depth-tested draws (pcsx2gs `see_through`, `GSRendererHW::ApplySeeThrough`, tfx.fx `PS_SEE_THROUGH`). Off in
   cutscenes.
-- **Camera ease back** (`[Video] CameraEaseBack`, on, `CameraEaseBackSeconds` 0.5): after a grab, a special move or
-  another shot where the game takes the camera, a jump back to the gameplay view becomes a glide (the look point
-  straight, the eye round it). Cuts (cutscenes, new rooms) still cut.
+- **Camera ease back** (`[Video] CameraEaseBack`, on, `CameraEaseBackSeconds` 0.5): any jump of the gameplay
+  camera's view (after a grab, a special move, a shot of the game's own) becomes a glide (the look point straight, the
+  eye round it); jumps into a close-up, cuts (cutscenes, new rooms) and the Modern free camera turned by the player
+  are left alone. Every jump is logged (trace GAME) with what the game was doing.
+- **Precise depth keeps the PS2's ties:** draws that test depth without writing it (shadows, decals, glows laid on a
+  surface) passed on the PS2 wherever their integer depth tied the surface's; against exact depths they passed or
+  failed pixel by pixel (the roof beams' shadows on the town's walls flickered). They now get the top of their
+  integer step.
 - **Modern controls: mouse camera** (`[Game] MouseCamera`, on; `MouseSensitivity` 0.1 degrees per pixel; F2 >
   Controls): the mouse turns the free camera. A click in the game captures it, Esc frees it. It never reaches the
   game as the right stick, so it cannot dodge.

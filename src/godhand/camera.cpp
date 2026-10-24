@@ -190,6 +190,7 @@ namespace godhand
         }
 
         float g_freePitch = 0.0f; // the free camera's extra pitch (Modern controls), from the last yaw hook
+        bool g_freeNow = false;   // the free camera has the view (the player turns it: never eased)
 
         // 0x13A2B8 lwc1 $f2,0x414(s1): the camera's yaw offset from Gene's facing ($f1 = his yaw, loaded just before;
         // the two are added at 0x13A2C4). With the Modern controls' free camera, the offset that puts the camera at
@@ -203,6 +204,7 @@ namespace godhand
             const float offset = loadFloat(rdram, cameraAt(ctx, 0x414u));
             const modern::FreeCamera free = modern::updateCamera(rdram, ctx->f[1] + offset, ctx->f[1], dt);
             g_freePitch = free.free ? free.pitch : 0.0f;
+            g_freeNow = free.free;
             if (!free.free)
             {
                 ctx->f[2] = offset;
@@ -239,10 +241,10 @@ namespace godhand
 
         // ---- Ease back after the game's own camera moves ------------------------------------------------------------
         //
-        // A grab, a special move or a scripted moment takes the camera (a close-up preset or the second update path);
-        // when it gives it back the camera cuts to wherever the gameplay camera is. With [Video] CameraEaseBack, a jump
-        // of the camera within a moment of the game giving it back starts a glide instead (CameraEaseBackSeconds, 0.5 s
-        // by default): from the last view drawn to the camera's own view of each frame, the look point moving straight
+        // A grab, a special move or a scripted moment takes the camera; when it gives it back the camera cuts to
+        // wherever the gameplay camera is. With [Video] CameraEaseBack, a jump of the player camera's view (other than
+        // into a close-up preset or the second update path, and other than the Modern free camera turned by the
+        // player) starts a glide instead (CameraEaseBackSeconds, 0.5 s by default): from the last view drawn to the camera's own view of each frame, the look point moving straight
         // and the eye round it (direction and distance eased apart). Written over the camera's look point (+0x200) and
         // eye (+0x210) before cCamera_update builds the frame's matrices (0x138744, a0 = the camera), so everything
         // drawn from the camera follows; the camera's logic computes both afresh every frame. A shot with a camera of
@@ -331,7 +333,6 @@ namespace godhand
         Pose g_drawnPose{};          // the view the last frame was drawn from
         bool g_haveDrawn = false;
         bool g_wasTaken = false;
-        int64_t g_armedUntilMs = 0;  // a jump until then (after the game gave the camera back) eases
         Pose g_easeFrom{};
         float g_easeTime = -1.0f;    // < 0: not easing
         float g_easeLength = 0.5f;
@@ -368,29 +369,38 @@ namespace godhand
             if (g_cameraCut.exchange(false, std::memory_order_relaxed) || !g_easeBackOn.load(std::memory_order_relaxed))
             {
                 g_easeTime = -1.0f;
-                g_armedUntilMs = 0;
                 g_wasTaken = taken;
                 g_drawnPose = game;
                 g_haveDrawn = true;
                 return;
             }
             if (taken)
-            {
                 g_easeTime = -1.0f; // into a close-up as the game cuts to it
-                g_armedUntilMs = 0;
-            }
-            else if (g_wasTaken || now - g_otherCameraMs < 300)
-                g_armedUntilMs = now + 400;
-            g_wasTaken = taken;
+            const bool other = now - g_otherCameraMs < 300;
 
-            if (g_easeTime < 0.0f && !taken && now < g_armedUntilMs && g_haveDrawn && jumped(g_drawnPose, game))
+            // Any jump of the camera's view, except into a close-up and while the free camera is turned by the
+            // player: the game's own cuts back (after grabs, special moves, shots of their own) glide. Each jump is
+            // logged with what the game was doing, so one that should have eased can be traced.
+            if (g_haveDrawn && jumped(g_drawnPose, game))
             {
-                g_easeFrom = g_drawnPose;
-                g_easeTime = 0.0f;
-                g_easeLength = std::fmax(g_easeBackSeconds.load(std::memory_order_relaxed), 0.05f);
-                g_armedUntilMs = 0;
-                GH_TRACE(Game, "camera: easing back over " << g_easeLength << " s");
+                int32_t preset = 0, mode = 0;
+                std::memcpy(&preset, rdram + ((camera + 0x51Cu) & (PS2_RAM_SIZE - 1u)), sizeof(preset));
+                std::memcpy(&mode, rdram + kCameraPreset, sizeof(mode));
+                const bool ease = g_easeTime < 0.0f && !taken && !g_freeNow;
+                GH_TRACE(Game, "camera: jump (" << (ease ? "easing back" : "not eased") << "): taken " << taken
+                                                << " (before " << g_wasTaken << "), other camera " << other
+                                                << ", free " << g_freeNow << ", battle timer " << preset << ", preset "
+                                                << mode << ", eye moved "
+                                                << std::hypot(game.eye[0] - g_drawnPose.eye[0], game.eye[1] - g_drawnPose.eye[1],
+                                                              game.eye[2] - g_drawnPose.eye[2]) << " m");
+                if (ease)
+                {
+                    g_easeFrom = g_drawnPose;
+                    g_easeTime = 0.0f;
+                    g_easeLength = std::fmax(g_easeBackSeconds.load(std::memory_order_relaxed), 0.05f);
+                }
             }
+            g_wasTaken = taken;
             Pose drawn = game;
             if (g_easeTime >= 0.0f)
             {

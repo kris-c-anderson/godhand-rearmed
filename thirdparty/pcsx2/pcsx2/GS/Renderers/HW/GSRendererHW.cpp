@@ -5864,13 +5864,58 @@ void GSRendererHW::ApplyPreciseDepth()
 		}
 	}
 
-	if (!PRIM->TME || PRIM->FST || m_vt.m_primclass != GS_TRIANGLE_CLASS || !m_conf.ds || !m_cached_ctx.DepthRead())
+	if (m_vt.m_primclass != GS_TRIANGLE_CLASS || !m_conf.ds || !m_cached_ctx.DepthRead())
 		return;
 	if (GSLocalMemory::m_psm[m_cached_ctx.ZBUF.PSM].fmt != 2) // 16-bit depth only
 		return;
 	const u32 n = m_conf.nverts;
 	if (n < 3 || !m_conf.verts)
 		return;
+
+	// Ties. On the PS2 a decal, a shadow or a glow laid on a surface (depth test, no depth write) has the surface's own
+	// integer depth and passes GEQUAL on the tie. Against precise depths that tie is gone: the surface holds its exact
+	// depth, the decal its own (computed from other vertices, or the floored integer when it gets none), and it passes
+	// or fails pixel by pixel (the beam shadows on the town's walls flickered). Draws that do not write depth are given
+	// the top of their integer step instead (+255/256), so they pass wherever the PS2 let them.
+	const bool tie = m_cached_ctx.ZBUF.ZMSK != 0 && m_cached_ctx.TEST.ZTST == ZTST_GEQUAL;
+
+	// Work on the draw's own copy of the vertices (m_vertex->buff keeps the game's, strips carry over from it).
+	const auto own_vertices = [this, n]() {
+		if (m_conf.verts == m_vertex->buff)
+		{
+			memcpy(m_draw_vertex.buff, m_vertex->buff, sizeof(GSVertex) * n);
+			memcpy(m_draw_index.buff, m_index->buff, sizeof(u16) * m_conf.nindices);
+			m_conf.verts = m_draw_vertex.buff;
+			m_conf.indices = m_draw_index.buff;
+		}
+		return const_cast<GSVertex*>(m_conf.verts);
+	};
+	const auto scaled = [this]() {
+		m_conf.cb_vs.depth_scale = 1.0f / 256.0f;
+		if (m_conf.cb_vs.max_depth != 0xFFFFFFFFu)
+			m_conf.cb_vs.max_depth = m_conf.cb_vs.max_depth * 256u + 255u;
+		m_conf.ps.zfloor = false; // the fractions are the point
+	};
+	// A draw that gets no line keeps its integer depth; a tie draw still gets the top of its step.
+	const auto integer_tie = [&]() {
+		if (!tie)
+			return;
+		for (u32 i = 0; i < n; i++)
+		{
+			if (m_conf.verts[i].XYZ.Z > 0xFFFFu)
+				return;
+		}
+		GSVertex* verts = own_vertices();
+		for (u32 i = 0; i < n; i++)
+			verts[i].XYZ.Z = verts[i].XYZ.Z * 256u + 255u;
+		scaled();
+	};
+
+	if (!PRIM->TME || PRIM->FST)
+	{
+		integer_tie();
+		return;
+	}
 
 	double sq = 0.0, sz = 0.0, sqq = 0.0, sqz = 0.0;
 	u32 zlo = 0xFFFFFFFFu, zhi = 0;
@@ -5879,7 +5924,10 @@ void GSRendererHW::ApplyPreciseDepth()
 		const GSVertex& v = m_conf.verts[i];
 		const float q = v.RGBAQ.Q;
 		if (v.XYZ.Z > 0xFFFFu || !(q > 0.0f) || !std::isfinite(q))
+		{
+			integer_tie();
 			return;
+		}
 		sq += q;
 		sz += v.XYZ.Z;
 		sqq += static_cast<double>(q) * q;
@@ -5929,7 +5977,10 @@ void GSRendererHW::ApplyPreciseDepth()
 		line->valid = true;
 	}
 	if (!line)
+	{
+		integer_tie();
 		return;
+	}
 	if (own)
 	{
 		line->n += n;
@@ -5940,24 +5991,14 @@ void GSRendererHW::ApplyPreciseDepth()
 	}
 	line->idle = 0;
 
-	// Work on the draw's own copy of the vertices (m_vertex->buff keeps the game's, strips carry over from it).
-	if (m_conf.verts == m_vertex->buff)
-	{
-		memcpy(m_draw_vertex.buff, m_vertex->buff, sizeof(GSVertex) * n);
-		memcpy(m_draw_index.buff, m_index->buff, sizeof(u16) * m_conf.nindices);
-		m_conf.verts = m_draw_vertex.buff;
-		m_conf.indices = m_draw_index.buff;
-	}
-	GSVertex* verts = const_cast<GSVertex*>(m_conf.verts);
+	GSVertex* verts = own_vertices();
+	const double top = tie ? 255.0 : 0.0;
 	for (u32 i = 0; i < n; i++)
 	{
-		const double z = (line->a + line->b * verts[i].RGBAQ.Q) * 256.0;
+		const double z = (line->a + line->b * verts[i].RGBAQ.Q) * 256.0 + top;
 		verts[i].XYZ.Z = static_cast<u32>(std::clamp(z + 0.5, 0.0, 16777215.0));
 	}
-	m_conf.cb_vs.depth_scale = 1.0f / 256.0f;
-	if (m_conf.cb_vs.max_depth != 0xFFFFFFFFu)
-		m_conf.cb_vs.max_depth = m_conf.cb_vs.max_depth * 256u + 255u;
-	m_conf.ps.zfloor = false; // the fractions are the point
+	scaled();
 }
 
 // pcsx2gs (God Hand): the see-through oval. The game gives, every frame, where the player is on screen, an oval round
