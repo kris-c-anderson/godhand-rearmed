@@ -29,6 +29,9 @@ public:
     // Any thread: the in-game menu (pcsx2gs_api.h set_menu: draw is a Pcsx2GsMenuFn, NULL hides it) and its input
     // (a Pcsx2GsMenuInput).
     static void SetMenu(void *draw, void *user);
+    // Any thread: an option the DLL changes while running (pcsx2gs_set_option, e.g. "dof" "0"); false = this DLL
+    // does not have it.
+    static bool SetOption(const char *key, const char *value);
     static void SetMenuInput(const void *input);
     // Main thread: hides the GS image while a host UI drawn by raylib (the F1 debugger) is open.
     static void SetHostUiVisible(bool visible);

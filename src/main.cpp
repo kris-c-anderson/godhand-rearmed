@@ -384,6 +384,7 @@ namespace
         {"game", "enemiesfollowview", "GODHAND_ENEMY_VIEW"},
         {"video", "startfullscreen", "GODHAND_START_FULLSCREEN"},
         {"video", "posteffects", "PS2X_PCSX2_NATIVE_SCALING"},
+        {"video", "depthoffield", "PS2X_PCSX2_DOF"},
         {"launcher", "show", "GODHAND_LAUNCHER"},
     };
 

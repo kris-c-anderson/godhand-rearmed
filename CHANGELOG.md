@@ -4,6 +4,10 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 24, 2026
 
+- **Depth of field switch** (`[Video] DepthOfField`, Graphics; F2 > Graphics switches it while playing): the game's
+  distance blur is composited from a quarter-size copy and mask of the picture, which at high internal resolutions
+  shows as dark, jagged, shimmering fringes along the edges of distant geometry. The renderer takes the switch live
+  (`pcsx2gs_set_option`).
 - **Enemies follow the wider view** (`[Game] EnemiesFollowView`, on by default; Options > Show advanced settings):
   the angles round Gene in which enemies close in and lunge widen by as much as the picture reaches further round him
   than the PS2's did (`docs/enemy-ai.md`), so enemies at the edges of a wide view fight as they did at the PS2's

@@ -592,6 +592,10 @@ namespace godhand::launcher
                                                      "at high internal resolutions; Upscaled draws them sharp.");
                         iniCombo(state, "##posteffects", "Video", "PostEffects", "ps2",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kPostEffects, value); });
+                        settingLabel("Depth of field", "The game's blur of the distance. At high internal resolutions "
+                                                       "its edges can show dark, shimmering fringes. F2 switches it "
+                                                       "while playing.");
+                        iniCheckbox(state, "On##dof", "Video", "DepthOfField", true);
                         settingLabel("HD texture pack", "Replacement textures in PCSX2's format.");
                         iniCheckbox(state, "Use replacement textures##tex", "Runtime", "PS2X_PCSX2_TEXTURES", true);
                         settingLabel("Texture pack folder", "The folder that holds replacements/. Empty: textures/SLUS-21503 "

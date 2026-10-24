@@ -34,6 +34,7 @@
 #include "godhand/log.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h" // GPR_U32
+#include "runtime/gs/gs_pcsx2_backend.h"
 #include "runtime/ps2_game_menu.h"
 
 #include <atomic>
@@ -63,6 +64,7 @@ namespace godhand
         std::atomic<float> g_closerPercent{100.0f};
         std::atomic<float> g_tiltDegrees{0.0f};
         std::atomic<bool> g_enemyView{true};
+        std::atomic<bool> g_depthOfField{true}; // [Video] DepthOfField (PS2X_PCSX2_DOF), the Graphics tab
         float g_aspect = kNativeAspect;
         std::filesystem::path g_iniPath;
 
@@ -253,6 +255,7 @@ namespace godhand
             ini.set("Video", "CameraDistance", number(g_closerPercent.load()));
             ini.set("Video", "CameraTilt", number(g_tiltDegrees.load()));
             ini.setBool("Game", "EnemiesFollowView", g_enemyView.load());
+            ini.setBool("Video", "DepthOfField", g_depthOfField.load());
             if (!ini.save())
             {
                 setStatus("Could not write godhand.ini.");
@@ -275,6 +278,8 @@ namespace godhand
             g_closerPercent = iniValue(ini, "Video", "CameraDistance", 100.0f, 0.0f, 100.0f);
             g_tiltDegrees = iniValue(ini, "Video", "CameraTilt", 0.0f, -30.0f, 30.0f);
             g_enemyView = ini.getBool("Game", "EnemiesFollowView", true);
+            g_depthOfField = ini.getBool("Video", "DepthOfField", true);
+            GSPcsx2Backend::SetOption("dof", g_depthOfField.load() ? "1" : "0");
             setStatus("Back to the values in godhand.ini.");
         }
 
@@ -354,6 +359,32 @@ namespace godhand
             const std::string preset = "As a preset: " + presetLine();
             ui->text_disabled(preset.c_str());
         }
+
+        // The Graphics tab: switches the renderer applies at once (pcsx2gs_set_option).
+        void drawGraphicsPanel(const Pcsx2GsUi *ui)
+        {
+            int dof = g_depthOfField.load() ? 1 : 0;
+            if (ui->checkbox("Depth of field##dof", &dof))
+            {
+                g_depthOfField = dof != 0;
+                if (!GSPcsx2Backend::SetOption("dof", dof ? "1" : "0"))
+                    setStatus("This pcsx2gs.dll cannot switch it while playing: build again.");
+            }
+            ui->text_disabled("The game's blur of the distance: a small blurred copy of the picture blended over it by "
+                              "depth. At high internal resolutions its edges show as dark, jagged fringes that "
+                              "shimmer as the camera moves.");
+            ui->separator_text("godhand.ini");
+            if (ui->button("Save##graphics"))
+                saveToIni();
+            {
+                std::lock_guard<std::mutex> lock(g_statusMutex);
+                if (!g_status.empty())
+                {
+                    ui->same_line();
+                    ui->text(g_status.c_str());
+                }
+            }
+        }
 #endif
     }
 
@@ -375,6 +406,8 @@ namespace godhand
         {
             const char *text = std::getenv("GODHAND_ENEMY_VIEW");
             g_enemyView = !(text && *text == '0');
+            const char *dof = std::getenv("PS2X_PCSX2_DOF");
+            g_depthOfField = !(dof && *dof == '0'); // the DLL reads the same variable when it opens
         }
         g_mul = fovFactor();
         ps2xRegisterHostHook("gh_fov_ease_a", &fovEaseA);
@@ -398,6 +431,7 @@ namespace godhand
             s_panel = true;
             ps2x::menu::setTitle("God Hand: Rearmed", "F2 closes this menu. The game keeps running behind it.");
             ps2x::menu::addPanel("Camera", &drawCameraPanel);
+            ps2x::menu::addPanel("Graphics", &drawGraphicsPanel);
         }
 #endif
     }

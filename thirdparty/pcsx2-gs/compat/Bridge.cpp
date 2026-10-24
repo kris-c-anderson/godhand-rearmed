@@ -1,4 +1,6 @@
 // pcsx2gs.dll: the C interface of include/pcsx2gs_api.h over PCSX2's GS (docs/GS_PCSX2.md, phase 2).
+#include <atomic>
+#include <cstring>
 #include "pcsx2gs_api.h"
 #include "pcsx2gs_host.h"
 
@@ -370,6 +372,27 @@ namespace
 extern "C" __declspec(dllexport) const Pcsx2GsApi *pcsx2gs_get_api(uint32_t version)
 {
     return version == PCSX2GS_API_VERSION ? &g_api : nullptr;
+}
+
+// Options the port changes while the game runs (the in-game menu), any thread; unknown keys are ignored:
+//   dof=0/1  the game's depth-of-field composite drawn (1, the default) or skipped (God Hand, GSRendererHW.cpp)
+namespace pcsx2gs
+{
+    // At start: PS2X_PCSX2_DOF=0 or PS2X_PCSX2_SKIP_DOF=1 turn it off.
+    std::atomic<bool> g_drawDof{[]
+    {
+        const char *dof = std::getenv("PS2X_PCSX2_DOF");
+        const char *skip = std::getenv("PS2X_PCSX2_SKIP_DOF");
+        return !((dof && *dof == '0') || (skip && *skip == '1'));
+    }()};
+}
+
+extern "C" __declspec(dllexport) void pcsx2gs_set_option(const char *key, const char *value)
+{
+    if (!key || !value)
+        return;
+    if (std::strcmp(key, "dof") == 0)
+        pcsx2gs::g_drawDof.store(*value != '0', std::memory_order_relaxed);
 }
 
 // The aspect ratio while the game runs (0 = 4:3, 1 = 16:9, 2 = fill the window), read at every present: the port uses
