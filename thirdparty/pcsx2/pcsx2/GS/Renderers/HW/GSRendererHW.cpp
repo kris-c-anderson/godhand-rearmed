@@ -21,9 +21,11 @@ namespace pcsx2gs
 {
 	extern std::atomic<bool> g_drawDof;      // compat/Bridge.cpp: pcsx2gs_set_option("dof")
 	extern std::atomic<bool> g_preciseDepth; // compat/Bridge.cpp: pcsx2gs_set_option("precise_depth")
-	struct SeeThroughParams
+	struct SeeThroughParams // the same as compat/Bridge.cpp's
 	{
-		float cx, cy, rx, ry, z0, z1, strength, soft;
+		float cx, cy, rx, ry, start, ramp, strength, soft;
+		float eye[3], mid;
+		float inverse[16]; // row-major
 	};
 	bool GetSeeThrough(SeeThroughParams& out); // compat/Bridge.cpp: pcsx2gs_set_option("see_through")
 }
@@ -6002,11 +6004,12 @@ void GSRendererHW::ApplyPreciseDepth()
 }
 
 // pcsx2gs (God Hand): the see-through oval. The game gives, every frame, where the player is on screen, an oval round
-// him and the depths of points a margin in front of him (camera.cpp). Every depth-tested triangle draw into the
-// scene's 16-bit depth buffer gets the pixel shader's PS_SEE_THROUGH: its pixels inside the oval and nearer than that
-// are dissolved (tfx.fx SeeThroughHides), so walls, pillars and the like between the camera and the player open up
-// round him. The player and what stands about him are at his depth or behind it, and stay; so do the HUD and the 2D
-// passes (sprites, no depth test).
+// him, the distance from the eye where hiding starts, and its camera (the eye, the inverse of its world-to-screen
+// matrix: camera.cpp). Every depth-tested triangle draw into the scene's 16-bit depth buffer gets the pixel shader's
+// PS_SEE_THROUGH: its pixels inside the oval and nearer the eye than that are dissolved, the ground below the player
+// excepted (tfx.fx SeeThroughHides), so walls, pillars and the like between the camera and the player open up round
+// him. The player and what stands about him are at his distance or beyond, and stay; so do the HUD and the 2D passes
+// (sprites, no depth test).
 void GSRendererHW::ApplySeeThrough(float rtscale)
 {
 	pcsx2gs::SeeThroughParams s;
@@ -6019,12 +6022,17 @@ void GSRendererHW::ApplySeeThrough(float rtscale)
 	const float ox = static_cast<float>(m_context->XYOFFSET.OFX) / 16.0f;
 	const float oy = static_cast<float>(m_context->XYOFFSET.OFY) / 16.0f;
 	const float scale = std::max(rtscale, 0.01f);
-	constexpr float unit = 1.0f / 4294967296.0f; // integer depth -> the shader's depth (VS: Z * 2^-32)
-	const float ramp = std::max(s.z1 - s.z0, 0.25f);
 	m_conf.ps.see_through = 1;
 	m_conf.cb_ps.SeeThroughA = GSVector4((s.cx - ox) * scale, (s.cy - oy) * scale, 1.0f / (s.rx * scale), 1.0f / (s.ry * scale));
-	m_conf.cb_ps.SeeThroughB = GSVector4(s.z0 * unit, 1.0f / (ramp * unit), std::clamp(s.strength, 0.0f, 1.0f),
+	m_conf.cb_ps.SeeThroughB = GSVector4(s.start, 1.0f / std::max(s.ramp, 0.01f), std::clamp(s.strength, 0.0f, 1.0f),
 		1.0f / std::clamp(s.soft, 0.02f, 1.0f));
+	m_conf.cb_ps.SeeThroughM0 = GSVector4(s.inverse[0], s.inverse[1], s.inverse[2], s.inverse[3]);
+	m_conf.cb_ps.SeeThroughM1 = GSVector4(s.inverse[4], s.inverse[5], s.inverse[6], s.inverse[7]);
+	m_conf.cb_ps.SeeThroughM2 = GSVector4(s.inverse[8], s.inverse[9], s.inverse[10], s.inverse[11]);
+	m_conf.cb_ps.SeeThroughM3 = GSVector4(s.inverse[12], s.inverse[13], s.inverse[14], s.inverse[15]);
+	m_conf.cb_ps.SeeThroughEye = GSVector4(s.eye[0], s.eye[1], s.eye[2], s.mid);
+	// Render-target pixel -> GS primitive coordinates; shader depth -> integer depth (VS: Z * 2^-32).
+	m_conf.cb_ps.SeeThroughMap = GSVector4(1.0f / scale, ox, oy, 4294967296.0f);
 }
 
 void GSRendererHW::EmulateZbuffer(const GSTextureCache::Target* ds)

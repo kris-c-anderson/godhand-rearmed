@@ -1150,10 +1150,19 @@ struct alignas(16) GSHWDrawConfig
 		float _pad2;
 
 		// pcsx2gs (God Hand), GSRendererHW::ApplySeeThrough: A = the oval's centre (render-target pixels) and 1 / its
-		// radii; B = the depth where hiding starts, 1 / the depth over which it reaches full (shader depth units),
-		// the strength (0..1), 1 / the soft edge's width (fraction of the radius).
+		// radii; B = the distance from the eye where hiding starts (world units), 1 / the distance over which it
+		// reaches full, the strength (0..1), 1 / the soft edge's width (fraction of the radius); M0..M3 = the rows of
+		// the inverse of the game camera's world-to-screen matrix (screen x, y in GS primitive coordinates, z = the
+		// integer depth); Eye = the eye (xyz) and the height of the player's middle (w); Map = 1 / the render scale,
+		// the draw's XYOFFSET (x, y), and 2^32 (shader depth -> integer depth).
 		GSVector4 SeeThroughA;
 		GSVector4 SeeThroughB;
+		GSVector4 SeeThroughM0;
+		GSVector4 SeeThroughM1;
+		GSVector4 SeeThroughM2;
+		GSVector4 SeeThroughM3;
+		GSVector4 SeeThroughEye;
+		GSVector4 SeeThroughMap;
 
 		__fi PSConstantBuffer()
 		{

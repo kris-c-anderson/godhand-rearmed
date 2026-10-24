@@ -969,7 +969,8 @@ inline void VU1Interpreter::finishXgkick()
     thread_local std::vector<uint8_t> extra;
     extra.clear();
     if (const ps2x::vu1hooks::Path1Filter filter = ps2x::vu1hooks::path1Filter(); filter && m_activeVuData)
-        filter(m_xgkick.packet.data(), m_xgkick.totalBytes, m_xgkick.sourceAddress, m_activeVuData, m_activeVuDataSize, extra);
+        filter(m_xgkick.packet.data(), m_xgkick.totalBytes, m_xgkick.sourceAddress, m_activeVuData, m_activeVuDataSize,
+               m_runStartPc, extra);
     if (m_activeMemory)
     {
         m_activeMemory->submitGifPacket(GifPathId::Path1, m_xgkick.packet.data(), m_xgkick.totalBytes);

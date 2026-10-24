@@ -257,18 +257,21 @@ namespace godhand
         // and the enemies about him stay in view. Every frame, once cCamera_update has the player camera's world-to-screen
         // matrix (+0x00 = view-screen * view, 0x1388F0, s4 = the camera), Gene's middle (0.95 m above his feet, +0xF0 of
         // the player) is projected to the screen; the oval's radii are SeeThroughWidth / SeeThroughHeight metres at his
-        // distance, and two points in front of him toward the eye give the depths where dissolving starts
-        // (SeeThroughMargin) and where it is full (0.8 m further). The renderer dissolves the depth-tested triangles
-        // nearer than that inside the oval (pcsx2gs: pcsx2gs_set_option "see_through", GSRendererHW::ApplySeeThrough,
-        // tfx.fx SeeThroughHides: an ordered dither, densest in the middle, thinning over the soft edge). Gene, the
-        // enemies round him and the floor at his feet are at his depth or behind it; the HUD has no depth test.
+        // distance. The renderer gets the eye and the inverse of the camera's matrix, rebuilds each pixel's place in
+        // the world, and dissolves what lies inside the oval and nearer the eye than Gene by SeeThroughMargin (full
+        // 0.3 m further), the ground below his middle excepted (pcsx2gs: pcsx2gs_set_option "see_through",
+        // GSRendererHW::ApplySeeThrough, tfx.fx SeeThroughHides: an ordered dither, densest in the middle, thinning
+        // over the soft edge). Gene and the enemies round him are at his distance or beyond; the HUD has no depth test.
+        // Oct 2026: the cut was a depth (two points projected in front of him) with a 1 m margin and a 0.8 m ramp:
+        // a wall less than ~1.8 m in front of him stayed (mostly) whole, and the floor before his feet dissolved in
+        // stripes of dither as its depth changed down the screen.
         // Only while the player camera's own logic runs (gameplay: not in cutscenes); the DLL turns the oval off by
         // itself when no frame brings one.
         constexpr uint32_t kPlayerPointer = 0x747A94u;
         std::atomic<bool> g_seeThrough{true};
         std::atomic<float> g_seeWidth{1.6f};     // metres, half-width
         std::atomic<float> g_seeHeight{2.2f};    // metres, half-height
-        std::atomic<float> g_seeMargin{1.0f};    // metres in front of Gene
+        std::atomic<float> g_seeMargin{0.5f};    // metres in front of Gene
         std::atomic<float> g_seeStrength{100.0f}; // percent
         std::atomic<float> g_seeSoftness{40.0f};  // percent of the radius
         bool g_seeSent = false;                   // game thread: an oval went to the renderer last frame
@@ -278,6 +281,48 @@ namespace godhand
         {
             float x, y, z, w;
         };
+
+        // Inverse of the world-to-screen matrix m (column-major, as project uses it), row-major out; false if singular.
+        bool invert(const float *m, float *out)
+        {
+            double a[4][8];
+            for (int r = 0; r < 4; ++r)
+                for (int c = 0; c < 4; ++c)
+                {
+                    a[r][c] = m[c * 4 + r];
+                    a[r][c + 4] = r == c ? 1.0 : 0.0;
+                }
+            for (int c = 0; c < 4; ++c)
+            {
+                int pivot = c;
+                for (int r = c + 1; r < 4; ++r)
+                    if (std::fabs(a[r][c]) > std::fabs(a[pivot][c]))
+                        pivot = r;
+                if (!(std::fabs(a[pivot][c]) > 1e-12))
+                    return false;
+                if (pivot != c)
+                    for (int k = 0; k < 8; ++k)
+                        std::swap(a[c][k], a[pivot][k]);
+                const double inv = 1.0 / a[c][c];
+                for (int k = 0; k < 8; ++k)
+                    a[c][k] *= inv;
+                for (int r = 0; r < 4; ++r)
+                    if (r != c && a[r][c] != 0.0)
+                    {
+                        const double f = a[r][c];
+                        for (int k = 0; k < 8; ++k)
+                            a[r][k] -= f * a[c][k];
+                    }
+            }
+            for (int r = 0; r < 4; ++r)
+                for (int c = 0; c < 4; ++c)
+                {
+                    out[r * 4 + c] = static_cast<float>(a[r][c + 4]);
+                    if (!std::isfinite(out[r * 4 + c]))
+                        return false;
+                }
+            return true;
+        }
 
         Clip project(const float *m, const float *p)
         {
@@ -372,19 +417,20 @@ namespace godhand
             const float perMetreY = perMetreX;
             const float rx = g_seeWidth.load(std::memory_order_relaxed) * perMetreX;
             const float ry = g_seeHeight.load(std::memory_order_relaxed) * perMetreY;
-            const float full = std::fmin(margin + 0.8f, distance - 0.15f);
-            const float startPoint[3] = {centre[0] + toEye[0] * margin, centre[1] + toEye[1] * margin, centre[2] + toEye[2] * margin};
-            const float fullPoint[3] = {centre[0] + toEye[0] * full, centre[1] + toEye[1] * full, centre[2] + toEye[2] * full};
-            const Clip c0 = project(m, startPoint), c1 = project(m, fullPoint);
-            if (!(c0.w > 0.01f) || !(c1.w > 0.01f) || !(rx > 1.0f) || !(ry > 1.0f) || rx > 20000.0f || ry > 20000.0f)
+            float inverse[16];
+            if (!(rx > 1.0f) || !(ry > 1.0f) || rx > 20000.0f || ry > 20000.0f || !invert(m, inverse))
             {
                 seeThroughOff();
                 return;
             }
-            char text[192];
-            std::snprintf(text, sizeof(text), "%.2f %.2f %.2f %.2f %.3f %.3f %.3f %.3f", cx, cy, rx, ry, c0.z / c0.w,
-                          c1.z / c1.w, g_seeStrength.load(std::memory_order_relaxed) / 100.0f,
-                          g_seeSoftness.load(std::memory_order_relaxed) / 100.0f);
+            const float start = distance - margin;
+            const float ramp = std::fmin(0.3f, std::fmax(start - 0.15f, 0.05f));
+            char text[640];
+            int length = std::snprintf(text, sizeof(text), "%.2f %.2f %.2f %.2f %.4f %.4f %.3f %.3f %.5f %.5f %.5f %.5f", cx, cy, rx, ry,
+                                       start, ramp, g_seeStrength.load(std::memory_order_relaxed) / 100.0f,
+                                       g_seeSoftness.load(std::memory_order_relaxed) / 100.0f, eye[0], eye[1], eye[2], centre[1]);
+            for (int i = 0; i < 16 && length > 0 && length < static_cast<int>(sizeof(text)); ++i)
+                length += std::snprintf(text + length, sizeof(text) - static_cast<size_t>(length), " %.9g", inverse[i]);
             if (!g_seeSent)
                 GH_TRACE(Game, "see-through on: " << text);
             g_seeSent = GSPcsx2Backend::SetOption("see_through", text);
@@ -484,7 +530,7 @@ namespace godhand
             g_seeThrough = ini.getBool("Video", "SeeThrough", true);
             g_seeWidth = iniValue(ini, "Video", "SeeThroughWidth", 1.6f, 0.3f, 6.0f);
             g_seeHeight = iniValue(ini, "Video", "SeeThroughHeight", 2.2f, 0.3f, 6.0f);
-            g_seeMargin = iniValue(ini, "Video", "SeeThroughMargin", 1.0f, 0.2f, 5.0f);
+            g_seeMargin = iniValue(ini, "Video", "SeeThroughMargin", 0.5f, 0.1f, 5.0f);
             g_seeStrength = iniValue(ini, "Video", "SeeThroughStrength", 100.0f, 0.0f, 100.0f);
             g_seeSoftness = iniValue(ini, "Video", "SeeThroughSoftness", 40.0f, 2.0f, 100.0f);
         }
@@ -596,7 +642,7 @@ namespace godhand
             ui->begin_disabled(see == 0);
             slider(ui, "Oval half-width##seew", g_seeWidth, 0.3f, 4.0f, "%.2f m");
             slider(ui, "Oval half-height##seeh", g_seeHeight, 0.3f, 4.0f, "%.2f m");
-            slider(ui, "Starts this far in front of Gene##seem", g_seeMargin, 0.2f, 3.0f, "%.2f m");
+            slider(ui, "Starts this far in front of Gene##seem", g_seeMargin, 0.1f, 3.0f, "%.2f m");
             slider(ui, "Strength##sees", g_seeStrength, 0.0f, 100.0f, "%.0f%%");
             slider(ui, "Soft edge##seesoft", g_seeSoftness, 2.0f, 100.0f, "%.0f%%");
             ui->end_disabled();

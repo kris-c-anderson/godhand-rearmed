@@ -13,8 +13,10 @@
 //    or the near plane any more. The ADC bit is then the game's own strip stitching, the back-face test, or the far
 //    plane. Patched in VU1 micro memory as each upload lands (ps2x::vu1hooks upload hook), and in the uploads the
 //    build compiles ahead of time (build.py vu writes patched copies, *_nearclip.bin), so the compiled code matches.
-// 2. Every PATH1 packet goes through a filter here before the GS. A triangle the GS cannot take (a corner outside the
-//    16-bit range, or behind the camera) gets ADC in the packet and is cut by us instead, from the full positions:
+// 2. Every PATH1 packet from those renderers goes through a filter here before the GS (the others, which clip by
+//    themselves, are left alone: VU1 says where the run that kicked a packet started). A triangle the GS cannot take
+//    (a corner outside the 16-bit range, or behind the camera) gets ADC in the packet and is cut by us instead, from
+//    the full positions:
 //    the VU writes 32-bit integers into the packet's X, Y and Z words and the GS only keeps 16 (Y, X) or 24 bits (Z),
 //    so the packet still has them. In front of the camera, every attribute the GS interpolates (S, T, Q, Z, colour,
 //    fog) is affine on screen, so the cut along the screen range is exact. A triangle reaching behind the camera is
@@ -63,27 +65,64 @@ namespace godhand
 
         bool isClipw(uint32_t upper) { return !(upper >> 31) && (upper & 0x7FFu) == 0x1FFu; }
 
-        struct Layout
-        {
-            uint16_t k = 0, s = 0; // input = output - k qwords; one vertex every s qwords
-        };
-        std::array<std::atomic<uint32_t>, 4> g_layouts{}; // k | s << 16, 0 = none (from the code resident now)
+        // Both tables: per instruction pair of VU1 micro memory, used on the VU1 thread only (uploads, their analysis
+        // and the PATH1 filter all run there, in order).
+        std::array<bool, 16384 / 8> g_patchedPair{};       // its clip test patched here
+        std::array<uint32_t, 16384 / 8> g_programLayout{}; // k | s << 16 of the patched renderer it is part of, 0 = none
+        std::array<bool, 16384 / 8> g_programPatched{};    // part of a program with a patched clip test
 
+        // The program round pair i: from after the previous end ([E] bit, then its delay slot) to its own end.
+        void programAround(const uint8_t *code, uint32_t pairs, uint32_t i, uint32_t &first, uint32_t &last)
+        {
+            auto endBit = [code](uint32_t j) {
+                uint32_t up;
+                std::memcpy(&up, code + j * 8u + 4u, 4u);
+                return ((up >> 30) & 1u) != 0u;
+            };
+            first = i;
+            while (first >= 2u && !endBit(first - 2u))
+                --first;
+            last = i;
+            while (last + 1u < pairs && !endBit(last))
+                ++last;
+            last = std::min(pairs - 1u, last + 1u);
+        }
+
+        // Only the renderers whose clip test was patched: their packets are matched to their input (stitch flags).
+        // The big renderers clip by themselves (the PS2's own near-plane and screen clipper): a triangle they skip
+        // (ADC) is drawn by them again as a clipped fan, so it must stay skipped. Dump gif_1652 (Oct 2026): a floor
+        // triangle reaching behind the camera, skipped by such a renderer and redrawn by it as a fan, was cut and
+        // drawn here too, over the fan: the two fought in depth, flickering darker and lighter.
         void analyse(const uint8_t *code, uint32_t codeSize)
         {
-            const uint32_t pairs = codeSize / 8u;
-            std::array<uint32_t, 4> found{};
-            uint32_t count = 0;
+            const uint32_t pairs = std::min<uint32_t>(codeSize / 8u, static_cast<uint32_t>(g_patchedPair.size()));
+            g_programLayout.fill(0u);
+            g_programPatched.fill(false);
+            for (uint32_t i = 0; i < pairs;)
+            {
+                uint32_t first = 0, last = 0;
+                programAround(code, pairs, i, first, last);
+                bool patched = false;
+                for (uint32_t j = first; j <= last && !patched; ++j)
+                    patched = g_patchedPair[j];
+                for (uint32_t j = first; j <= last; ++j)
+                    g_programPatched[j] = patched;
+                i = last + 1u;
+            }
             auto pair = [code](uint32_t i, uint32_t &lo, uint32_t &up) {
                 std::memcpy(&lo, code + i * 8u, 4u);
                 std::memcpy(&up, code + i * 8u + 4u, 4u);
             };
-            for (uint32_t i = 0; i < pairs && count < found.size(); ++i)
+            for (uint32_t i = 0; i < pairs; ++i)
             {
                 uint32_t lo, up;
                 pair(i, lo, up);
                 if (lo != kXgkickVi05 || (up >> 31))
                     continue;
+                if (!g_programPatched[i])
+                    continue;
+                uint32_t first = 0, last = 0;
+                programAround(code, pairs, i, first, last);
                 uint32_t s = 0, k = 0;
                 for (uint32_t j = i; j-- > (i > 16u ? i - 16u : 0u) && !s;)
                 {
@@ -99,18 +138,17 @@ namespace godhand
                 }
                 if (!s || !k)
                     continue;
-                const uint32_t value = k | (s << 16);
-                if (std::find(found.begin(), found.begin() + count, value) == found.begin() + count)
-                    found[count++] = value;
+                for (uint32_t j = first; j <= last; ++j)
+                    g_programLayout[j] = k | (s << 16);
             }
-            for (uint32_t i = 0; i < g_layouts.size(); ++i)
-                g_layouts[i].store(i < count ? found[i] : 0u, std::memory_order_relaxed);
         }
 
         void uploadHook(uint8_t *code, uint32_t codeSize, uint32_t byteAddress, uint32_t size)
         {
-            const uint32_t pairs = codeSize / 8u;
-            const uint32_t first = byteAddress / 8u, last = std::min(pairs, (byteAddress + size) / 8u);
+            const uint32_t pairs = std::min<uint32_t>(codeSize / 8u, static_cast<uint32_t>(g_patchedPair.size()));
+            const uint32_t first = byteAddress / 8u, last = std::min(pairs, (byteAddress + size + 7u) / 8u);
+            for (uint32_t i = first; i < last; ++i)
+                g_patchedPair[i] = false;
             for (uint32_t i = first; i < last; ++i)
             {
                 uint32_t lo, up;
@@ -128,6 +166,7 @@ namespace godhand
                 if (!clip)
                     continue;
                 std::memcpy(code + i * 8u, &kClipFar, 4u);
+                g_patchedPair[i] = true;
                 if (g_patched.fetch_add(1, std::memory_order_relaxed) < 8u)
                     GH_TRACE(Game, "near geometry: renderer clip test patched at pair 0x" << std::hex << i << std::dec);
             }
@@ -303,6 +342,9 @@ namespace godhand
                          std::vector<Cut> &scratch)
         {
             const Vertex *v[3] = {&a, &b, &c};
+            for (const Vertex *p : v)
+                if (!std::isfinite(p->q) || p->q == 0.0f || !std::isfinite(p->s) || !std::isfinite(p->t) || !std::isfinite(p->z))
+                    return; // on the camera plane or garbage: no position to rebuild, left dropped
             int behind = 0;
             bool tooNear = false; // a corner between the camera and the near plane: its depth is past the 16-bit range
             for (const Vertex *p : v)
@@ -391,6 +433,10 @@ namespace godhand
                 k.t *= k.q;
                 k.z = A + B * k.q;
             }
+            for (const Cut &k : poly)
+                if (!std::isfinite(k.x) || !std::isfinite(k.y) || !std::isfinite(k.z) || !std::isfinite(k.s) || !std::isfinite(k.t) ||
+                    !std::isfinite(k.q))
+                    return;
             emitPolygon(out, poly, scratch, c, flat);
             g_cutNear.fetch_add(1, std::memory_order_relaxed);
         }
@@ -398,41 +444,41 @@ namespace godhand
         int32_t s32(uint32_t value) { return static_cast<int32_t>(value); }
 
         // The batch's input for this packet (its stitch flags), when a known renderer layout matches.
-        bool findInput(const uint8_t *packet, uint32_t sourceAddress, const uint8_t *vuData, uint32_t vuDataSize,
-                       uint32_t &inputQw, uint32_t &stride)
+        // programPc: where the VU1 run that kicked the packet started (bytes), inside the program that kicked it.
+        bool findInput(const uint8_t *packet, uint32_t size, uint32_t sourceAddress, const uint8_t *vuData, uint32_t vuDataSize,
+                       uint32_t programPc, uint32_t &inputQw, uint32_t &stride)
         {
             const uint32_t qwords = vuDataSize / 16u;
-            if (qwords == 0u)
+            if (qwords == 0u || size < 16u)
                 return false;
+            const uint32_t value = g_programLayout[(programPc / 8u) % g_programLayout.size()];
+            if (!value)
+                return false; // not one of the patched renderers
             const uint32_t out = sourceAddress / 16u;
-            for (const auto &slot : g_layouts)
-            {
-                const uint32_t value = slot.load(std::memory_order_relaxed);
-                if (!value)
-                    continue;
-                const uint32_t k = value & 0xFFFFu, s = value >> 16;
-                const uint32_t in = (out + qwords - (k % qwords)) % qwords;
-                if (std::memcmp(vuData + in * 16u, packet, 16u) == 0)
-                {
-                    inputQw = in;
-                    stride = s;
-                    return true;
-                }
-            }
-            return false;
+            const uint32_t k = value & 0xFFFFu, s = value >> 16;
+            const uint32_t in = (out + qwords - (k % qwords)) % qwords;
+            if (std::memcmp(vuData + in * 16u, packet, 16u) != 0)
+                return false;
+            inputQw = in;
+            stride = s;
+            return true;
         }
 
         thread_local uint32_t t_prim = 0;   // PRIM as the GS has it (this thread's PATH1)
         thread_local bool t_primKnown = false;
 
         void path1Filter(uint8_t *packet, uint32_t size, uint32_t sourceAddress, const uint8_t *vuData, uint32_t vuDataSize,
-                         std::vector<uint8_t> &extra)
+                         uint32_t programPc, std::vector<uint8_t> &extra)
         {
+            // The other renderers (the big ones, 2D, effects) are left as the PS2 has them: their clip tests were not
+            // changed, and the big ones redraw what they skip as clipped fans of their own.
+            if (!g_programPatched[(programPc / 8u) % g_programPatched.size()])
+                return;
             thread_local std::vector<Cut> poly, scratch;
             Out out{extra};
             TagInfo outTag{};
             uint32_t inputQw = 0, stride = 0;
-            const bool haveInput = findInput(packet, sourceAddress, vuData, vuDataSize, inputQw, stride);
+            const bool haveInput = findInput(packet, size, sourceAddress, vuData, vuDataSize, programPc, inputQw, stride);
             bool crossing = false;
             const uint32_t vuQwords = vuDataSize / 16u;
             bool firstTag = true;

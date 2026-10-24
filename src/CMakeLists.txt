@@ -45,6 +45,7 @@ set(GODHAND_HOST_SOURCES
     godhand/camera.cpp
     godhand/modern_controls.cpp
     godhand/near_geometry.cpp
+    godhand/crash_history.cpp
     godhand/hud_layout.cpp
     godhand/ini_file.cpp
     godhand/counter_finder.cpp

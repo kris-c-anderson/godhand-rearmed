@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -384,10 +385,12 @@ extern "C" __declspec(dllexport) const Pcsx2GsApi *pcsx2gs_get_api(uint32_t vers
 // Options the port changes while the game runs (the in-game menu), any thread; unknown keys are ignored:
 //   dof=0/1            the game's depth-of-field composite drawn (1, the default) or skipped (GSRendererHW.cpp)
 //   precise_depth=0/1  depth from Q for perspective-textured draws (1, the default; GSRendererHW::ApplyPreciseDepth)
-//   see_through=0 | "cx cy rx ry z0 z1 strength soft"   the see-through oval round the player, given every frame by
-//                      the game (GSRendererHW::ApplySeeThrough): centre and radii in GS pixels (primitive coordinates,
-//                      the 2048 offset included), the depths (16-bit units) where hiding starts and where it is full,
-//                      strength 0..1, soft edge as a fraction of the radius. 0 = off.
+//   see_through=0 | "cx cy rx ry start ramp strength soft ex ey ez mid m00 m01 .. m33"   the see-through oval round
+//                      the player, given every frame by the game (GSRendererHW::ApplySeeThrough): centre and radii in
+//                      GS pixels (primitive coordinates, the 2048 offset included); the distance from the eye (world
+//                      units) where hiding starts and the distance over which it becomes full; strength 0..1; soft
+//                      edge as a fraction of the radius; the eye; the height of the player's middle; the inverse of
+//                      the camera's world-to-screen matrix, row by row (screen x, y, integer depth, 1 -> world). 0 = off.
 namespace pcsx2gs
 {
     // At start: PS2X_PCSX2_DOF=0 or PS2X_PCSX2_SKIP_DOF=1 turn it off.
@@ -410,7 +413,9 @@ namespace pcsx2gs
 {
     struct SeeThroughParams
     {
-        float cx, cy, rx, ry, z0, z1, strength, soft;
+        float cx, cy, rx, ry, start, ramp, strength, soft;
+        float eye[3], mid;
+        float inverse[16]; // row-major
     };
     std::atomic<bool> g_seeThroughOn{false};
     std::atomic<uint32_t> g_seeThroughFrame{0}; // g_frame when it was last given
@@ -438,8 +443,21 @@ extern "C" __declspec(dllexport) void pcsx2gs_set_option(const char *key, const 
     if (std::strcmp(key, "see_through") == 0)
     {
         pcsx2gs::SeeThroughParams p{};
-        const bool on = std::sscanf(value, "%f %f %f %f %f %f %f %f", &p.cx, &p.cy, &p.rx, &p.ry, &p.z0, &p.z1,
-                                    &p.strength, &p.soft) == 8 && p.rx > 0.5f && p.ry > 0.5f && p.strength > 0.0f;
+        float *f[28] = {&p.cx, &p.cy, &p.rx, &p.ry, &p.start, &p.ramp, &p.strength, &p.soft, &p.eye[0], &p.eye[1], &p.eye[2], &p.mid};
+        for (int i = 0; i < 16; i++)
+            f[12 + i] = &p.inverse[i];
+        int read = 0;
+        const char *at = value;
+        for (; read < 28; read++)
+        {
+            char *end = nullptr;
+            const float v = std::strtof(at, &end);
+            if (end == at || !std::isfinite(v))
+                break;
+            *f[read] = v;
+            at = end;
+        }
+        const bool on = read == 28 && p.rx > 0.5f && p.ry > 0.5f && p.strength > 0.0f && p.ramp > 0.0f;
         if (on)
         {
             std::lock_guard<std::mutex> lock(pcsx2gs::g_seeThroughMutex);

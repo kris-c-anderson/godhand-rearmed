@@ -32,6 +32,7 @@
 #include "godhand/character_mods.h"
 #include "godhand/widescreen.h"
 #include "godhand/near_geometry.h"
+#include "godhand/crash_history.h"
 #include "godhand/camera.h"
 #if GODHAND_HAS_LAUNCHER
 #include "godhand/launcher.h"
@@ -674,8 +675,11 @@ int main(int argc, char *argv[])
     if (!checkCpu(!headless))
         return kExitCpu;
     installCrashReporter();
+    godhand::installFatalExceptionLog();
 #endif
     godhand::log::configureFromEnvironment();
+    if (!headless)
+        godhand::reportPreviousCrashes();
     for (const std::string &note : settingNotes)
         GH_INFO(Boot, "settings: " << note);
     if (!padLayout.empty())

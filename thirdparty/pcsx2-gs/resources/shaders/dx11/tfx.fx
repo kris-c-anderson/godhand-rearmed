@@ -284,22 +284,41 @@ cbuffer cb1
 	float _pad3_cb1;
 	float _pad4_cb1;
 	float4 SeeThroughA; // pcsx2gs: the oval's centre (pixels), 1 / its radii
-	float4 SeeThroughB; // pcsx2gs: depth where hiding starts, 1 / its ramp, strength, 1 / soft edge
+	float4 SeeThroughB; // pcsx2gs: distance from the eye where hiding starts, 1 / its ramp, strength, 1 / soft edge
+	float4 SeeThroughM0; // pcsx2gs: inverse world-to-screen matrix, rows
+	float4 SeeThroughM1;
+	float4 SeeThroughM2;
+	float4 SeeThroughM3;
+	float4 SeeThroughEye; // pcsx2gs: the eye (xyz), the player's middle height (w)
+	float4 SeeThroughMap; // pcsx2gs: 1 / render scale, XYOFFSET x, y, 2^32
 };
 
 #if PS_SEE_THROUGH
-// pcsx2gs (God Hand): the see-through oval round the player (GSRendererHW::ApplySeeThrough). What lies nearer the
-// camera than the player by a margin, inside the oval, is dissolved: an ordered 4x4 dither of the pixels, densest
-// in the middle, thinning over the soft edge and over the first stretch of depth past the margin.
-bool SeeThroughHides(float4 p)
+// pcsx2gs (God Hand): the see-through oval round the player (GSRendererHW::ApplySeeThrough). Each pixel's place in
+// the game's world is rebuilt from its screen position and depth (the inverse of the game camera's matrix). What lies
+// nearer the eye than the player by a margin, inside the oval, is dissolved: an ordered 4x4 dither of the pixels,
+// densest in the middle, thinning over the soft edge and over the first stretch of distance past the margin. The
+// ground stays (a surface facing up or down, below the player's middle: floors, steps, table tops): it cannot hide
+// him, and dissolving it opened holes at his feet that striped as the floor's distance changed down the screen.
+float3 SeeThroughWorld(float4 p)
+{
+	float4 s = float4(p.xy * SeeThroughMap.x + SeeThroughMap.yz, p.z * SeeThroughMap.w, 1.0f);
+	float4 h = float4(dot(SeeThroughM0, s), dot(SeeThroughM1, s), dot(SeeThroughM2, s), dot(SeeThroughM3, s));
+	return h.xyz / h.w;
+}
+
+bool SeeThroughHides(float4 p, float3 world, float3 dx, float3 dy)
 {
 	static const float bayer[16] = { 0.0f, 8.0f, 2.0f, 10.0f, 12.0f, 4.0f, 14.0f, 6.0f,
 	                                 3.0f, 11.0f, 1.0f, 9.0f, 15.0f, 7.0f, 13.0f, 5.0f };
 	float2 d = (p.xy - SeeThroughA.xy) * SeeThroughA.zw;
 	float radial = saturate((1.0f - sqrt(dot(d, d))) * SeeThroughB.w);
-	float nearer = saturate((p.z - SeeThroughB.x) * SeeThroughB.y);
+	float nearer = saturate((SeeThroughB.x - length(world - SeeThroughEye.xyz)) * SeeThroughB.y);
+	float3 n = cross(dx, dy);
+	float len = length(n);
+	bool ground = len > 0.0f && abs(n.y) > 0.6f * len && world.y < SeeThroughEye.w;
 	uint2 cell = uint2(p.xy) & 3u;
-	return radial * nearer * SeeThroughB.z > (bayer[cell.y * 4u + cell.x] + 0.5f) / 16.0f;
+	return !ground && radial * nearer * SeeThroughB.z > (bayer[cell.y * 4u + cell.x] + 0.5f) / 16.0f;
 }
 #endif
 
@@ -1356,6 +1375,13 @@ PS_OUTPUT ps_main(PS_INPUT input)
 void ps_main(PS_INPUT input)
 #endif
 {
+#if PS_SEE_THROUGH
+	// Before any discard or depth flooring: the derivatives need every pixel of the quad, and the exact depth.
+	float3 see_world = SeeThroughWorld(input.p);
+	float3 see_dx = ddx(see_world);
+	float3 see_dy = ddy(see_world);
+#endif
+
 	// Must floor before depth testing.
 #if PS_ZFLOOR
 	input.p.z = floor(input.p.z * exp2(32.0f)) * exp2(-32.0f);
@@ -1385,7 +1411,7 @@ void ps_main(PS_INPUT input)
 #endif
 
 #if PS_SEE_THROUGH
-	if (SeeThroughHides(input.p))
+	if (SeeThroughHides(input.p, see_world, see_dx, see_dy))
 		DISCARD;
 #endif
 

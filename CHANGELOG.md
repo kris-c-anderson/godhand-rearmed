@@ -2,6 +2,24 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 25, 2026
+
+- **Near geometry: floors no longer flicker.** The filter also cut triangles from the game's big renderers, which clip
+  by themselves: a triangle they skip near the camera they draw again as a clipped fan. The cut copy and the fan lay on
+  the same floor and fought in depth ("shadows" flickering in and out; dump gif_1652). Only packets from the renderers
+  whose clip test was patched are touched now: VU1 tells the filter where the run that kicked a packet started
+  (`ps2_vu1_hooks.h`, programPc), and the upload hook marks which programs it patched. Non-finite positions are dropped
+  instead of cut.
+- **See-through oval, rebuilt in the world:** the renderer gets the camera (eye, inverse of its world-to-screen matrix)
+  and rebuilds each pixel's place in the world. What lies inside the oval and more than `SeeThroughMargin` (now 0.5 m,
+  was 1 m with a 0.8 m ramp) nearer the eye than Gene dissolves, fully 0.3 m further. Walls just in front of him now
+  open up even with the camera far behind them (the "bubble"), and the ground below his middle (floors, steps, table
+  tops) never dissolves: the floor before his feet used to dissolve in stripes of dither.
+- **Crash reports for silent crashes:** a crash that skips the in-game reporter (a fail-fast, heap corruption) is still
+  recorded by Windows; at start the game reads the last three days of godhand.exe crashes from the Application event log
+  and writes them to the log (code, module, offset, and the function when it is this build). Heap corruption and stack
+  overflow are also logged as they are raised (src/godhand/crash_history.cpp).
+
 ## October 24, 2026
 
 - **Walls stay, the oval dissolves them:** the walls that vanished whole near the camera were the game's own doing: its
