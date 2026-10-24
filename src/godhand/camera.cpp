@@ -245,8 +245,9 @@ namespace godhand
         // by default): from the last view drawn to the camera's own view of each frame, the look point moving straight
         // and the eye round it (direction and distance eased apart). Written over the camera's look point (+0x200) and
         // eye (+0x210) before cCamera_update builds the frame's matrices (0x138744, a0 = the camera), so everything
-        // drawn from the camera follows; the camera's logic computes both afresh every frame. A cut (setCamUpdate: a
-        // cutscene, a new room) never eases.
+        // drawn from the camera follows; the camera's logic computes both afresh every frame. A shot with a camera of
+        // its own (D_005CAFF0 another camera) counts as the game taking it: the glide then starts from that camera's
+        // last view. A cut (setCamUpdate: a cutscene, a new room) never eases.
         std::atomic<bool> g_easeBackOn{true};
         std::atomic<float> g_easeBackSeconds{0.5f};
 
@@ -336,13 +337,30 @@ namespace godhand
         float g_easeLength = 0.5f;
         int64_t g_lastUpdateMs = 0;
 
+        int64_t g_otherCameraMs = -100000; // another camera was the one drawn from (D_005CAFF0), last at this time
+        constexpr uint32_t kCurrentCamera = 0x5CAFF0u; // D_005CAFF0: the camera the frame is drawn from
+
         // 0x138744 (cCamera_update, sq s0,192(sp); a0 = the camera)
         void cameraUpdateStart(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             const uint32_t camera = GPR_U32(ctx, 4);
-            if (camera != g_playerCamera.load(std::memory_order_relaxed) || camera < 0x100000u || camera >= PS2_RAM_SIZE)
+            if (camera < 0x100000u || camera >= PS2_RAM_SIZE - 0x600u)
                 return;
             const int64_t now = steadyMs();
+            if (camera != g_playerCamera.load(std::memory_order_relaxed))
+            {
+                // Another camera drawing the frame (a shot with a camera of its own): its view is the one to ease from
+                // when the player camera takes over again.
+                uint32_t current;
+                std::memcpy(&current, rdram + kCurrentCamera, sizeof(current));
+                if (current == camera)
+                {
+                    g_drawnPose = readPose(rdram, camera);
+                    g_haveDrawn = true;
+                    g_otherCameraMs = now;
+                }
+                return;
+            }
             const float dt = std::fmin(std::fmax(static_cast<float>(now - g_lastUpdateMs) / 1000.0f, 0.0f), 0.1f);
             g_lastUpdateMs = now;
             const Pose game = readPose(rdram, camera);
@@ -361,7 +379,7 @@ namespace godhand
                 g_easeTime = -1.0f; // into a close-up as the game cuts to it
                 g_armedUntilMs = 0;
             }
-            else if (g_wasTaken)
+            else if (g_wasTaken || now - g_otherCameraMs < 300)
                 g_armedUntilMs = now + 400;
             g_wasTaken = taken;
 
