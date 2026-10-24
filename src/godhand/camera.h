@@ -12,4 +12,5 @@ namespace godhand
 
     // godhand.ini, for the F2 menu's Save / Revert (main.cpp, before installWidescreen).
     void setCameraIniPath(const std::filesystem::path &path);
+    [[nodiscard]] const std::filesystem::path &cameraIniPath();
 }

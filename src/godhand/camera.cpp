@@ -31,6 +31,7 @@
 #include "godhand/camera.h"
 #include "godhand/camera_presets.h"
 #include "godhand/ini_file.h"
+#include "godhand/modern_controls.h"
 #include "godhand/log.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h" // GPR_U32
@@ -38,6 +39,7 @@
 #include "runtime/ps2_game_menu.h"
 
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -93,11 +95,20 @@ namespace godhand
         }
 
         // Once per camera update: m eases toward the fight or the exploration value, and the readout is taken.
-        void easeMultiplier(const uint8_t *rdram, R5900Context *ctx)
+        // The camera preset the battle camera eases to (D_003BD540, an index into 0x3BD548/0x3BD5F0/0x3BD698): 0, 1
+        // the usual battle framings; 2, 5, 6, 7, 10, 11, 12 bosses'; 3, 4, 8, 9, 13 the close-ups of grabs and
+        // special moves (the game's own moment: the Modern controls step aside).
+        constexpr uint32_t kCameraPreset = 0x3BD540u;
+
+        void easeMultiplier(const uint8_t *rdram, R5900Context *ctx, bool secondPath)
         {
             int32_t preset;
             std::memcpy(&preset, rdram + cameraAt(ctx, 0x51Cu), sizeof(preset));
             const bool battle = preset > 0;
+            int32_t mode;
+            std::memcpy(&mode, rdram + kCameraPreset, sizeof(mode));
+            const bool closeUp = battle && (mode == 3 || mode == 4 || mode == 8 || mode == 9 || mode == 13);
+            modern::noteCamera({battle, secondPath || closeUp});
             g_mul += ((battle ? fightFactor() : fovFactor()) - g_mul) * 0.1f;
             g_battle.store(battle, std::memory_order_relaxed);
             g_camFov.store(loadFloat(rdram, cameraAt(ctx, 0x250u)), std::memory_order_relaxed);
@@ -111,19 +122,20 @@ namespace godhand
         // 0x13A6E4 swc1 $f1,0x250(s1): $f1 = fov*0.9 + $f20*0.1
         void fovEaseA(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            easeMultiplier(rdram, ctx);
+            easeMultiplier(rdram, ctx, false);
             storeFov(rdram, ctx, ctx->f[1] + 0.1f * (g_mul - 1.0f) * ctx->f[20]);
         }
         // 0x13B368 swc1 $f0,0x250(s1): $f0 = fov*0.9 + $f3*0.1
         void fovEaseB(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            easeMultiplier(rdram, ctx);
+            easeMultiplier(rdram, ctx, true);
             storeFov(rdram, ctx, ctx->f[0] + 0.1f * (g_mul - 1.0f) * ctx->f[3]);
         }
         // 0x13BBB8 swc1 $f0,0x250(s1): $f0 = 31.0, the player camera's starting fov (setCamUpdate also clears +0x51C)
         void fovReset(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             g_mul = fovFactor();
+            modern::resetCamera();
             storeFov(rdram, ctx, ctx->f[0] * g_mul);
         }
 
@@ -142,9 +154,36 @@ namespace godhand
             return distance * dolly;
         }
 
+        float g_freePitch = 0.0f; // the free camera's extra pitch (Modern controls), from the last yaw hook
+
+        // 0x13A2B8 lwc1 $f2,0x414(s1): the camera's yaw offset from Gene's facing ($f1 = his yaw, loaded just before;
+        // the two are added at 0x13A2C4). With the Modern controls' free camera, the offset that puts the camera at
+        // the free camera's own yaw instead.
+        void orbitYaw(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            static auto s_last = std::chrono::steady_clock::now();
+            const auto now = std::chrono::steady_clock::now();
+            const float dt = std::chrono::duration<float>(now - s_last).count();
+            s_last = now;
+            const float offset = loadFloat(rdram, cameraAt(ctx, 0x414u));
+            const modern::FreeCamera free = modern::updateCamera(ctx->f[1] + offset, dt);
+            g_freePitch = free.free ? free.pitch : 0.0f;
+            if (!free.free)
+            {
+                ctx->f[2] = offset;
+                return;
+            }
+            float relative = free.yaw - ctx->f[1];
+            while (relative > kPi)
+                relative -= 2.0f * kPi;
+            while (relative < -kPi)
+                relative += 2.0f * kPi;
+            ctx->f[2] = relative;
+        }
+
         float orbitPitch(const uint8_t *rdram, R5900Context *ctx)
         {
-            const float pitch = loadFloat(rdram, cameraAt(ctx, 0x410u));
+            const float pitch = loadFloat(rdram, cameraAt(ctx, 0x410u)) + g_freePitch;
             const float tilt = g_tiltDegrees.load(std::memory_order_relaxed) * kDegToRad;
             const float fov = fovFactor();
             if (tilt == 0.0f || std::fabs(fov - 1.0f) < 0.0005f)
@@ -393,6 +432,11 @@ namespace godhand
         g_iniPath = path;
     }
 
+    const std::filesystem::path &cameraIniPath()
+    {
+        return g_iniPath;
+    }
+
     void installCamera(float aspect)
     {
         g_aspect = aspect;
@@ -416,6 +460,7 @@ namespace godhand
         ps2xRegisterHostHook("gh_cam_pitch_f4", &orbitPitchF4);
         ps2xRegisterHostHook("gh_cam_pitch_f0", &orbitPitchF0);
         ps2xRegisterHostHook("gh_cam_distance", &orbitDistanceF0);
+        ps2xRegisterHostHook("gh_cam_yaw", &orbitYaw);
         ps2xRegisterHostHook("gh_em_wedge", &enemyWedge);
         ps2xRegisterHostHook("gh_em_lunge", &enemyLunge);
         ps2xSetPatchFlag("fov", true);
@@ -424,6 +469,7 @@ namespace godhand
                                                << "% in fights; comes in " << g_closerPercent.load() << "%, tilt "
                                                << g_tiltDegrees.load() << " degrees; enemies follow the view: "
                                                << (g_enemyView.load() ? "on" : "off"));
+        modern::install(); // the Control Style (its Controls tab comes after Camera and Graphics)
 #if defined(GODHAND_HAS_GS_MENU)
         static bool s_panel = false;
         if (!s_panel)

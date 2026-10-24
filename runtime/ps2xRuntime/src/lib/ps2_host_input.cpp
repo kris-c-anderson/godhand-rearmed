@@ -1258,6 +1258,7 @@ namespace ps2_host_input
         bool g_skipMouseDelta = false;
         bool g_mouseMoved = false;
         std::atomic<bool> g_menuMouse{false}; // setMenuHasMouse: the in-game menu has the mouse
+        std::atomic<PadFilter> g_padFilter{nullptr}; // setPadFilter: the game's own reshaping of a player's input
         float g_mouseRightX = 0.0f;
         float g_mouseRightY = 0.0f;
         MouseCameraInput g_mouseCameraInput;
@@ -1964,6 +1965,8 @@ namespace ps2_host_input
                 idle.connected = state[player].connected;
                 state[player] = idle;
             }
+            else if (const PadFilter filter = g_padFilter.load(std::memory_order_acquire))
+                filter(player, state[player]);
         }
         pollControlsFile();
         std::lock_guard<std::mutex> lock(g_mutex);
@@ -2008,6 +2011,11 @@ namespace ps2_host_input
     void setBlocked(bool blocked)
     {
         g_blocked.store(blocked, std::memory_order_relaxed);
+    }
+
+    void setPadFilter(PadFilter filter)
+    {
+        g_padFilter.store(filter, std::memory_order_release);
     }
 
     void setMenuHasMouse(bool menu)

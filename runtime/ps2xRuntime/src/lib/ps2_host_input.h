@@ -28,6 +28,11 @@ namespace ps2_host_input
     // While set (the in-game menu is open and lets the game keep the controllers and keys), the mouse is the menu's:
     // no mouse camera, no mouse-button bindings, the cursor stays free.
     void setMenuHasMouse(bool menu);
+    // The game's own reshaping of what a player's controls produce (e.g. a modern control scheme): called on the
+    // window thread by sample() for every player that is not idle, after the bindings, before the game reads the
+    // state. nullptr = none. The function must be cheap and must not call back into this namespace.
+    using PadFilter = void (*)(uint32_t player, ps2x::iop::PadInputState &state);
+    void setPadFilter(PadFilter filter);
 
     // Controls screen (F1, ps2_controls_screen.cpp; window thread). Open: every pad idle but plugged in. Closed again:
     // each player stays idle until its own buttons and sticks are released (at most 2 s).

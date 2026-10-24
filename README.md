@@ -108,7 +108,7 @@ Your settings are in `build\port\bin\godhand.ini` (every launcher option is a li
 |---|---|
 | Display | Aspect ratio, HUD layout (16:9 edges or 4:3), menu layout (4:3 or stretched), camera (presets; with "Show advanced settings": field of view, in fights, distance, tilt, enemies following the view), window / full screen, window size |
 | Graphics | Internal resolution (1x–8x), post effects (PS2 resolution or upscaled), HD texture pack and its folder |
-| Gameplay | 60 FPS, L3 dash, roulette timer (normal / double), Unlock Hard, mute music |
+| Gameplay | 60 FPS, L3 dash, control style (classic / modern, work in progress), roulette timer (normal / double), Unlock Hard, mute music |
 | Mods | Character: Gene or Xavier |
 | Controls | Every key, mouse button and controller button (also F1 in game) |
 

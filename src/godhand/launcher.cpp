@@ -46,6 +46,8 @@ namespace godhand::launcher
                                     {"140%", "140"}, {"150%", "150"}};
         constexpr Choice kCameraDistances[] = {{"Stays: wider view looks zoomed out", "0"}, {"Halfway in", "50"},
                                                {"Comes in: Gene keeps his size", "100"}};
+        constexpr Choice kControlStyles[] = {{"Classic", "classic"}, {"Modern", "modern"}};
+        constexpr Choice kModernL1[] = {{"Hold", "hold"}, {"Toggle", "toggle"}};
         constexpr Choice kCameraTilts[] = {{"None", "0"}, {"5 degrees", "5"}, {"10 degrees", "10"}, {"15 degrees", "15"}};
         constexpr Choice kWindowSizes[] = {{"Automatic (3/4 of the screen)", "auto"}, {"PS2 size", "native"}};
         constexpr Choice kResolutions[] = {{"1x  native (512x448)", "1"}, {"2x  1024x896", "2"}, {"3x  1536x1344", "3"},
@@ -636,6 +638,22 @@ namespace godhand::launcher
                         settingLabel("Unlock Hard", "Hard can be picked from the start instead of after a clear. Your "
                                                     "save is not changed.");
                         iniCheckbox(state, "On##hard", "Game", "UnlockHard", false);
+                        settingLabel("Control style", "Classic: as on the PS2. Modern (work in progress): the right "
+                                                      "stick turns the camera; hold or toggle L1 for the original "
+                                                      "controls, double-tap L1 for the quick turn. F2 > Controls "
+                                                      "while playing.");
+                        iniCombo(state, "##controlstyle", "Game", "ControlStyle", "classic",
+                                 [](const char *id, std::string &value) { return choiceCombo(id, kControlStyles, value); });
+                        if (lower(state.ini.get("Game", "ControlStyle", "classic")) == "modern")
+                        {
+                            settingLabel("Modern: auto", "The original controls whenever the battle camera is on (Gene "
+                                                         "has an enemy targeted).");
+                            iniCheckbox(state, "On##modernauto", "Game", "ModernAuto", true);
+                            settingLabel("Modern: L1", "Hold L1 for the original controls, or press it to switch to them "
+                                                       "and back.");
+                            iniCombo(state, "##modernl1", "Game", "ModernL1", "hold",
+                                     [](const char *id, std::string &value) { return choiceCombo(id, kModernL1, value); });
+                        }
                         settingLabel("Mute music", "Stage, boss, menu and minigame music plays silent. Cutscenes keep "
                                                    "their sound (their music and voices are one track).");
                         iniCheckbox(state, "On##music", "Sound", "MuteMusic", false);

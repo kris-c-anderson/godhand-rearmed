@@ -244,6 +244,13 @@ hook = "gh_cam_distance"
 flag = "fov"
 replace = true
 
+# The camera's yaw offset from Gene's facing (lwc1 $f2,0x414(s1)): the Modern controls' free camera (camera.cpp).
+[[patches.hooks]]
+address = "0x0013A2B8"
+hook = "gh_cam_yaw"
+flag = "fov"
+replace = true
+
 [[patches.hooks]]
 address = "0x0013B12C"
 hook = "gh_cam_pitch_f0"
