@@ -65,27 +65,76 @@ namespace godhand
 
         bool isClipw(uint32_t upper) { return !(upper >> 31) && (upper & 0x7FFu) == 0x1FFu; }
 
-        // Both tables: per instruction pair of VU1 micro memory, used on the VU1 thread only (uploads, their analysis
+        // All tables: per instruction pair of VU1 micro memory, used on the VU1 thread only (uploads, their analysis
         // and the PATH1 filter all run there, in order).
-        std::array<bool, 16384 / 8> g_patchedPair{};       // its clip test patched here
-        std::array<uint32_t, 16384 / 8> g_programLayout{}; // k | s << 16 of the patched renderer it is part of, 0 = none
-        std::array<bool, 16384 / 8> g_programPatched{};    // part of a program with a patched clip test
+        constexpr uint32_t kPairs = 16384 / 8;
+        std::array<bool, kPairs> g_patchedPair{};       // its clip test patched here
+        std::array<uint32_t, kPairs> g_programLayout{}; // k | s << 16 of the patched renderer it is part of, 0 = none
+        std::array<bool, kPairs> g_programPatched{};    // part of a program with a patched clip test
+        std::array<uint16_t, kPairs> g_program{};       // the program each pair belongs to (its lowest pair)
 
-        // The program round pair i: from after the previous end ([E] bit, then its delay slot) to its own end.
-        void programAround(const uint8_t *code, uint32_t pairs, uint32_t i, uint32_t &first, uint32_t &last)
+        // A program is the code one renderer runs: the stretches between [E] bits (an end bit, then its delay slot)
+        // united by the direct branches between them. The [E] bits alone are not a boundary: a renderer's vertex loop
+        // has two exits, the plain one and the ADC path (a stitched or clipped last vertex), each with its own XGKICK
+        // and [E], so the ADC tail sits after the first [E] (304bb8 at 0x400: kicks at 0x464 and 0x46c, [E] at 0x465
+        // and 0x46d) and looked like another, unpatched program: every packet whose last vertex was stitched went to
+        // the GS uncut, wrapped triangles across the screen (gif_13533, Oct 2026). The MSCNT continuation after an [E]
+        // (`b top`) is a branch into the loop too.
+        bool branchTarget(uint32_t lo, uint32_t up, uint32_t i, uint32_t &target)
+        {
+            if (up >> 31)
+                return false; // the lower word is an immediate
+            const uint32_t op = lo >> 25;
+            if (!(op == 0x20u || op == 0x21u || (op >= 0x28u && op <= 0x29u) || (op >= 0x2Cu && op <= 0x2Fu)))
+                return false; // b, bal, ibeq, ibne, ibltz, ibgtz, iblez, ibgez
+            int32_t imm = static_cast<int32_t>(lo & 0x7FFu);
+            if (imm & 0x400)
+                imm -= 0x800;
+            target = static_cast<uint32_t>(static_cast<int32_t>(i) + 1 + imm) & (kPairs - 1u);
+            return true;
+        }
+
+        void findPrograms(const uint8_t *code, uint32_t pairs)
         {
             auto endBit = [code](uint32_t j) {
                 uint32_t up;
                 std::memcpy(&up, code + j * 8u + 4u, 4u);
                 return ((up >> 30) & 1u) != 0u;
             };
-            first = i;
-            while (first >= 2u && !endBit(first - 2u))
-                --first;
-            last = i;
-            while (last + 1u < pairs && !endBit(last))
-                ++last;
-            last = std::min(pairs - 1u, last + 1u);
+            // Stretches between [E]s: each pair's stretch is named by the stretch's first pair.
+            static std::array<uint16_t, kPairs> parent;
+            uint32_t first = 0;
+            for (uint32_t i = 0; i < pairs; ++i)
+            {
+                parent[i] = static_cast<uint16_t>(first);
+                if (endBit(i) && i + 1u < pairs)
+                {
+                    parent[i + 1u] = static_cast<uint16_t>(first); // the delay slot
+                    first = i + 2u;
+                    ++i;
+                }
+            }
+            auto find = [&](uint32_t a) {
+                while (parent[a] != a)
+                {
+                    parent[a] = parent[parent[a]];
+                    a = parent[a];
+                }
+                return a;
+            };
+            for (uint32_t i = 0; i < pairs; ++i)
+            {
+                uint32_t lo, up, target;
+                std::memcpy(&lo, code + i * 8u, 4u);
+                std::memcpy(&up, code + i * 8u + 4u, 4u);
+                if (!branchTarget(lo, up, i, target) || target >= pairs)
+                    continue;
+                const uint32_t a = find(i), b = find(target);
+                if (a != b)
+                    parent[std::max(a, b)] = static_cast<uint16_t>(std::min(a, b));
+            }
+            for (uint32_t i = 0; i < pairs; ++i)
+                g_program[i] = static_cast<uint16_t>(find(i));
         }
 
         // Only the renderers whose clip test was patched: their packets are matched to their input (stitch flags).
@@ -95,51 +144,54 @@ namespace godhand
         // drawn here too, over the fan: the two fought in depth, flickering darker and lighter.
         void analyse(const uint8_t *code, uint32_t codeSize)
         {
-            const uint32_t pairs = std::min<uint32_t>(codeSize / 8u, static_cast<uint32_t>(g_patchedPair.size()));
+            const uint32_t pairs = std::min<uint32_t>(codeSize / 8u, kPairs);
             g_programLayout.fill(0u);
             g_programPatched.fill(false);
-            for (uint32_t i = 0; i < pairs;)
-            {
-                uint32_t first = 0, last = 0;
-                programAround(code, pairs, i, first, last);
-                bool patched = false;
-                for (uint32_t j = first; j <= last && !patched; ++j)
-                    patched = g_patchedPair[j];
-                for (uint32_t j = first; j <= last; ++j)
-                    g_programPatched[j] = patched;
-                i = last + 1u;
-            }
+            findPrograms(code, pairs);
+            for (uint32_t i = 0; i < pairs; ++i)
+                if (g_patchedPair[i])
+                    for (uint32_t j = 0; j < pairs; ++j)
+                        if (g_program[j] == g_program[i])
+                            g_programPatched[j] = true;
             auto pair = [code](uint32_t i, uint32_t &lo, uint32_t &up) {
                 std::memcpy(&lo, code + i * 8u, 4u);
                 std::memcpy(&up, code + i * 8u + 4u, 4u);
             };
+            // The layout of each patched renderer, from the code before its XGKICK (any register) in its own program:
+            // the nearest "iaddiu vi05,vi04,K" (output = input + K) and "iaddiu vi04,vi04,S" (one vertex every S
+            // qwords). 304bb8's S sits 19 pairs before the kick, so no fixed window: the whole program.
             for (uint32_t i = 0; i < pairs; ++i)
             {
                 uint32_t lo, up;
                 pair(i, lo, up);
-                if (lo != kXgkickVi05 || (up >> 31))
+                if ((lo & 0xFFFF07FFu) != 0x800006FCu || (up >> 31)) // xgkick viN
                     continue;
                 if (!g_programPatched[i])
                     continue;
-                uint32_t first = 0, last = 0;
-                programAround(code, pairs, i, first, last);
                 uint32_t s = 0, k = 0;
-                for (uint32_t j = i; j-- > (i > 16u ? i - 16u : 0u) && !s;)
+                for (uint32_t j = i; j-- > 0u && !(s && k);)
                 {
+                    if (g_program[j] != g_program[i])
+                        continue;
                     pair(j, lo, up);
-                    if (!(up >> 31) && (lo & 0xFFFFF800u) == 0x10042000u && (lo & 0x7FFu) >= 3u && (lo & 0x7FFu) <= 8u)
+                    if (up >> 31)
+                        continue;
+                    if (!s && (lo & 0xFFFFF800u) == 0x10042000u && (lo & 0x7FFu) >= 3u && (lo & 0x7FFu) <= 8u)
                         s = lo & 0x7FFu; // iaddiu vi04,vi04,S
-                }
-                for (uint32_t j = i; j-- > (i > 256u ? i - 256u : 0u) && !k;)
-                {
-                    pair(j, lo, up);
-                    if (!(up >> 31) && (lo & 0xFFFFF800u) == 0x10052000u)
+                    if (!k && (lo & 0xFFFFF800u) == 0x10052000u)
                         k = lo & 0x7FFu; // iaddiu vi05,vi04,K
                 }
                 if (!s || !k)
                     continue;
-                for (uint32_t j = first; j <= last; ++j)
-                    g_programLayout[j] = k | (s << 16);
+                const uint32_t layout = k | (s << 16);
+                for (uint32_t j = 0; j < pairs; ++j)
+                    if (g_program[j] == g_program[i])
+                    {
+                        if (g_programLayout[j] && g_programLayout[j] != layout)
+                            GH_WARN(Game, "near geometry: program at pair 0x" << std::hex << g_program[i] << " has kicks with different layouts (0x"
+                                                                             << g_programLayout[j] << " and 0x" << layout << ")" << std::dec);
+                        g_programLayout[j] = layout;
+                    }
             }
         }
 
@@ -707,6 +759,14 @@ namespace godhand
         ps2x::vu1hooks::setUploadHook(&uploadHook);
         ps2x::vu1hooks::setPath1Filter(&path1Filter);
         GH_INFO(Game, "near geometry: on (triangles at the screen edges and behind the camera are cut and drawn)");
+    }
+
+    void nearGeometryProgramAt(uint32_t pair, uint32_t &program, bool &patched, uint32_t &layout)
+    {
+        pair %= kPairs;
+        program = g_program[pair];
+        patched = g_programPatched[pair];
+        layout = g_programLayout[pair];
     }
 
     void nearGeometryStats(uint64_t &patched, uint64_t &cut, uint64_t &cutNear, uint64_t &noStitch)

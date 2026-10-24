@@ -225,7 +225,27 @@ namespace godhand::hangdump
             }
             else
             {
-                std::snprintf(text, sizeof(text), "0x%llx", static_cast<unsigned long long>(pc));
+                // No symbol: at least the module (an injected overlay or driver shows up by name).
+                HMODULE module = nullptr;
+                wchar_t path[MAX_PATH]{};
+                if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                       reinterpret_cast<LPCWSTR>(static_cast<uintptr_t>(pc)), &module) &&
+                    module && GetModuleFileNameW(module, path, MAX_PATH))
+                {
+                    const wchar_t *name = path;
+                    for (const wchar_t *c = path; *c; ++c)
+                        if (*c == L'\\' || *c == L'/')
+                            name = c + 1;
+                    char narrow[MAX_PATH];
+                    size_t n = 0;
+                    for (; name[n] && n + 1 < sizeof(narrow); ++n)
+                        narrow[n] = name[n] < 128 ? static_cast<char>(name[n]) : '?';
+                    narrow[n] = '\0';
+                    std::snprintf(text, sizeof(text), "%s+0x%llx (0x%llx)", narrow,
+                                  static_cast<unsigned long long>(pc - reinterpret_cast<uintptr_t>(module)), static_cast<unsigned long long>(pc));
+                }
+                else
+                    std::snprintf(text, sizeof(text), "0x%llx", static_cast<unsigned long long>(pc));
             }
             return text;
         }

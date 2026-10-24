@@ -36,4 +36,10 @@ namespace ps2_host_display
     };
     // Copies the records made at or after `sinceHostSeconds` (a ring of the last 65536) into `out`.
     void copyPresents(double sinceHostSeconds, std::vector<PresentRecord> &out);
+
+    // The host loop's heartbeat (the main thread: window messages, input, present): iterations so far and the
+    // steady-clock milliseconds of its last window-message pump (0 before the first). A hang watch compares them
+    // with what Windows says about the window.
+    void hostLoopHeartbeat(uint64_t &iterations, uint64_t &lastPumpMs);
+    uint64_t hostSteadyMs();
 }

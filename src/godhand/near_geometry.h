@@ -12,4 +12,7 @@ namespace godhand
     // Counters for the log / menu: renderer tests patched, triangles cut in front of the camera, cut at the near
     // plane, and triangles reaching behind the camera with no stitch information.
     void nearGeometryStats(uint64_t &patched, uint64_t &cut, uint64_t &cutNear, uint64_t &noStitch);
+    // What the filter knows about the VU1 instruction pair at `pair` (diagnostics, VU1 thread): the program it belongs
+    // to (its lowest pair), whether that program's clip test is patched, and its layout (K | S << 16, 0 = none).
+    void nearGeometryProgramAt(uint32_t pair, uint32_t &program, bool &patched, uint32_t &layout);
 }

@@ -110,6 +110,27 @@ namespace ps2_host_display
         return enabled;
     }
 
+    std::atomic<uint64_t> g_hostLoopIterations{0};
+    std::atomic<uint64_t> g_hostLoopLastPumpMs{0};
+
+    uint64_t hostSteadyMs()
+    {
+        return static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
+
+    void hostLoopHeartbeat(uint64_t &iterations, uint64_t &lastPumpMs)
+    {
+        iterations = g_hostLoopIterations.load(std::memory_order_relaxed);
+        lastPumpMs = g_hostLoopLastPumpMs.load(std::memory_order_relaxed);
+    }
+
+    void notePump()
+    {
+        g_hostLoopIterations.fetch_add(1u, std::memory_order_relaxed);
+        g_hostLoopLastPumpMs.store(hostSteadyMs(), std::memory_order_relaxed);
+    }
+
     std::mutex overlayMutex;
     std::string overlayNote;
     std::string lastFpsLine;
@@ -3133,6 +3154,7 @@ void PS2Runtime::run()
         if (IsWindowMinimized())
         {
             PollInputEvents();
+            ps2_host_display::notePump();
             ps2_host_input::sample();
             if (WindowShouldClose())
             {
@@ -3246,7 +3268,10 @@ void PS2Runtime::run()
         { const char *v = std::getenv("PS2X_HOST_PRESENT"); return v && *v == '1'; }();
         const bool hostPresents = !pcsx2Gs || alwaysPresent || GSPcsx2Backend::HostUiVisible();
         if (!hostPresents)
+        {
             PollInputEvents();
+            ps2_host_display::notePump();
+        }
         else
         {
         BeginDrawing();
@@ -3303,7 +3328,10 @@ void PS2Runtime::run()
         }
         const auto swapStart = tracingFrames ? PresentClock::now() : presentStart;
         if (hostPresents)
-            EndDrawing();
+        {
+            EndDrawing(); // swaps, then polls the window's messages
+            ps2_host_display::notePump();
+        }
         // The image shown: the GS thread's shared-present sequence, or (copy path) the field it was uploaded for.
         ps2_host_display::notePresent(eeScheduler().currentVSyncTick(), shared ? sharedFrame.sequence : eeScheduler().currentVSyncTick());
         fpsOverlay.present(eeScheduler().currentVSyncTick());
