@@ -267,7 +267,7 @@ namespace godhand
         constexpr uint32_t kPlayerPointer = 0x747A94u;
         std::atomic<bool> g_seeThrough{true};
         std::atomic<float> g_seeWidth{1.6f};     // metres, half-width
-        std::atomic<float> g_seeHeight{1.3f};    // metres, half-height
+        std::atomic<float> g_seeHeight{2.2f};    // metres, half-height
         std::atomic<float> g_seeMargin{1.0f};    // metres in front of Gene
         std::atomic<float> g_seeStrength{100.0f}; // percent
         std::atomic<float> g_seeSoftness{40.0f};  // percent of the radius
@@ -351,7 +351,10 @@ namespace godhand
             }
             const float cx = c.x / c.w, cy = c.y / c.w;
             const float perMetreX = std::hypot(cs.x / cs.w - cx, cs.y / cs.w - cy);
-            const float perMetreY = std::hypot(cu.x / cu.w - cx, cu.y / cu.w - cy);
+            // Both radii at the same scale (metres at Gene's distance, across the view): measured with the world's up
+            // the height shrank as the camera looked down, and the oval came out wide and short.
+            (void)cu;
+            const float perMetreY = perMetreX;
             const float rx = g_seeWidth.load(std::memory_order_relaxed) * perMetreX;
             const float ry = g_seeHeight.load(std::memory_order_relaxed) * perMetreY;
             const float full = std::fmin(margin + 0.8f, distance - 0.15f);
@@ -465,7 +468,7 @@ namespace godhand
         {
             g_seeThrough = ini.getBool("Video", "SeeThrough", true);
             g_seeWidth = iniValue(ini, "Video", "SeeThroughWidth", 1.6f, 0.3f, 6.0f);
-            g_seeHeight = iniValue(ini, "Video", "SeeThroughHeight", 1.3f, 0.3f, 6.0f);
+            g_seeHeight = iniValue(ini, "Video", "SeeThroughHeight", 2.2f, 0.3f, 6.0f);
             g_seeMargin = iniValue(ini, "Video", "SeeThroughMargin", 1.0f, 0.2f, 5.0f);
             g_seeStrength = iniValue(ini, "Video", "SeeThroughStrength", 100.0f, 0.0f, 100.0f);
             g_seeSoftness = iniValue(ini, "Video", "SeeThroughSoftness", 40.0f, 2.0f, 100.0f);

@@ -13,7 +13,8 @@ Newest first. Each change is commented in the code where it was made.
   packet still carries: along the screen range (exact: everything the GS interpolates is affine on screen), and at the
   near plane in clip space for triangles reaching behind the camera. The game's strip stitching is read from each
   batch's input in VU1 memory, so stitches stay out and back faces are recognised (src/godhand/near_geometry.cpp;
-  runtime hooks in ps2_vu1_hooks.h). F2 > Graphics shows its counters.
+  runtime hooks in ps2_vu1_hooks.h). F2 > Graphics shows its counters, and the log a line every 200,000 packets. A triangle with a corner between the camera and the near plane is cut there too (its depth runs past the 16-bit range: clamped, whole surfaces flickered in front of others).
+- **See-through oval:** both radii at the same scale (it was squashed when the camera looked down); default half-height 2.2 m.
 - **See-through** (`[Video] SeeThrough`, on; launcher Display; F2 > Camera sizes it live): walls, pillars and stalls
   between the camera and Gene dissolve in a soft-edged oval round him (an ordered dither, densest in the middle), so
   he and the enemies about him stay in view. Only what is more than `SeeThroughMargin` (1 m) nearer the camera than

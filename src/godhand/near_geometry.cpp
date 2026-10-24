@@ -57,6 +57,7 @@ namespace godhand
         constexpr double kRangeLo = 8.0, kRangeHi = 4087.0; // the GS's screen range, pixels, with a margin
 
         std::atomic<uint64_t> g_patched{0}, g_cut{0}, g_cutNear{0}, g_noStitch{0};
+        std::atomic<uint64_t> g_packets{0}, g_crossing{0}, g_crossingMatched{0};
 
         // ---- 1. Microcode ---------------------------------------------------------------------------------------
 
@@ -303,9 +304,13 @@ namespace godhand
         {
             const Vertex *v[3] = {&a, &b, &c};
             int behind = 0;
+            bool tooNear = false; // a corner between the camera and the near plane: its depth is past the 16-bit range
             for (const Vertex *p : v)
+            {
                 behind += (p->q <= 0.0f) ? 1 : 0;
-            if (behind == 0)
+                tooNear = tooNear || (p->hasQ && p->q > 1.0f / static_cast<float>(kNear));
+            }
+            if (behind == 0 && !tooNear)
             {
                 if (c.adc)
                     return; // stitched, a back face, or past the far plane: exact for a triangle in front
@@ -318,8 +323,14 @@ namespace godhand
             }
             if (behind == 3)
                 return;
+            if (behind == 0)
+            {
+                // All in front, one corner nearer than the near plane: the VU's tests are right (nothing mirrored).
+                if (c.adc)
+                    return;
+            }
             // Reaching behind the camera.
-            if (c.stitchKnown)
+            else if (c.stitchKnown)
             {
                 if (c.stitch)
                     return;
@@ -412,6 +423,7 @@ namespace godhand
             TagInfo outTag{};
             uint32_t inputQw = 0, stride = 0;
             const bool haveInput = findInput(packet, sourceAddress, vuData, vuDataSize, inputQw, stride);
+            bool crossing = false;
             const uint32_t vuQwords = vuDataSize / 16u;
             bool firstTag = true;
             uint32_t pos = 0;
@@ -541,7 +553,8 @@ namespace godhand
                                 bool outside = false, unknown = false;
                                 for (const Vertex *p : tri)
                                 {
-                                    if (p->x < 0 || p->x > 0xFFFF || p->y < 0 || p->y > 0xFFFF || (p->hasQ && p->q <= 0.0f))
+                                    if (p->x < 0 || p->x > 0xFFFF || p->y < 0 || p->y > 0xFFFF ||
+                                        (p->hasQ && (p->q <= 0.0f || p->q > 1.0f / static_cast<float>(kNear))))
                                         outside = true;
                                     if (!p->hasQ && p->z <= 0.0)
                                         unknown = true; // behind the camera, no Q to rebuild it from
@@ -550,6 +563,7 @@ namespace godhand
                                 }
                                 if (outside || unknown)
                                 {
+                                    crossing = true;
                                     // The GS must not draw it as it is.
                                     packet[v.xyzOffset + 13u] |= 0x80u; // ADC: bit 15 of the fourth word
                                     if (!unknown && cuttable)
@@ -590,6 +604,19 @@ namespace godhand
                 if (eop)
                     break;
             }
+            if (crossing)
+            {
+                g_crossing.fetch_add(1, std::memory_order_relaxed);
+                if (haveInput)
+                    g_crossingMatched.fetch_add(1, std::memory_order_relaxed);
+            }
+            if (g_packets.fetch_add(1, std::memory_order_relaxed) % 200000u == 199999u)
+                GH_INFO(Game, "near geometry: " << g_patched.load() << " clip tests patched; " << g_crossing.load()
+                                                << " packets needed cutting, " << g_crossingMatched.load()
+                                                << " of them matched to their input (stitch flags); triangles cut: "
+                                                << g_cut.load() << " at the screen's edges, " << g_cutNear.load()
+                                                << " at the camera; " << g_noStitch.load()
+                                                << " reaching behind it without stitch flags");
             if (!out.tag)
             {
                 extra.clear();
