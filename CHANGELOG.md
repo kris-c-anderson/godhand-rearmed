@@ -2,6 +2,18 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 24, 2026
+
+- **Field of view** (Display > Field of view, `[Video] FieldOfView`, 100-150%): the gameplay camera's own fov is
+  scaled where the game eases it toward its target, so the projection, culling and the enemies' "on screen" test all
+  follow; cutscenes keep their framing.
+- **Enemies and widescreen:** the game decides whether an enemy is on screen with a frustum test built from the same
+  camera values the widescreen setting widens (and with a margin beyond the screen's edges), so enemies at the sides
+  of a wide screen behave as on screen. Nothing needed changing; documented with the addresses in
+  `src/godhand/widescreen.cpp`.
+- **HD packs:** replacement textures keep to the alpha levels of the game's own texture (no more see-through enemies
+  or grainy distance haze with packs made from edited dumps).
+
 ## October 23, 2026
 
 - **The project is God Hand: Rearmed**, on its own `main` branch; the launcher and window carry the name, and the

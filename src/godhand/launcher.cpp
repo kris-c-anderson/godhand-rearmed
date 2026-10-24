@@ -40,6 +40,8 @@ namespace godhand::launcher
         constexpr Choice kRouletteTimers[] = {{"Normal", "normal"}, {"Double time", "double"}};
         constexpr Choice kPostEffects[] = {{"PS2 resolution (PCSX2's fix)", "ps2"}, {"Upscaled", "upscaled"}, {"No fix", "off"}};
         constexpr Choice kWindowModes[] = {{"Window", "window"}, {"Fullscreen (borderless)", "fullscreen"}, {"Maximized window", "maximized"}};
+        constexpr Choice kFovs[] = {{"100%: as on the PS2", "100"}, {"110%", "110"}, {"120%", "120"}, {"130%", "130"},
+                                    {"140%", "140"}, {"150%", "150"}};
         constexpr Choice kWindowSizes[] = {{"Automatic (3/4 of the screen)", "auto"}, {"PS2 size", "native"}};
         constexpr Choice kResolutions[] = {{"1x  native (512x448)", "1"}, {"2x  1024x896", "2"}, {"3x  1536x1344", "3"},
                                            {"4x  2048x1792", "4"},        {"5x  2560x2240", "5"}, {"6x  3072x2688", "6"},
@@ -483,6 +485,11 @@ namespace godhand::launcher
                         iniCombo(state, "##menus", "Video", "MenuLayout", "4:3",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kMenuLayouts, value); });
                         ImGui::EndDisabled();
+                        settingLabel("Field of view", "How much the gameplay camera shows, both ways (widescreen widens "
+                                                      "it sideways on its own). Enemies treat what the camera shows as on "
+                                                      "screen. Cutscenes keep their framing.");
+                        iniCombo(state, "##fov", "Video", "FieldOfView", "100",
+                                 [](const char *id, std::string &value) { return choiceCombo(id, kFovs, value); });
                         settingLabel("Window", "F11 switches between window and fullscreen while playing.");
                         {
                             std::string mode = state.ini.getBool("Video", "StartFullscreen", false)  ? "fullscreen"

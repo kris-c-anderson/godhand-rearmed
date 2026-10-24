@@ -10,12 +10,19 @@
 //   gsaspectratio=16:9                             PS2X_PCSX2_ASPECT = A (PCSX2's custom aspect ratio)
 //
 // recomp/godhand.toml has the three hooks (flag "widescreen"); they replace the instruction and set $at to the
-// computed float. The rest of the 2D (HUD widgets, menus, button prompts) is narrowed by hud_layout.cpp, which also
+// computed float.
+//
+// Enemies "on screen": the enemy AI's visibility checks (func_00279F00 and its clones, cGameObj_isClip,
+// IsTargetVisible_14B470) clip the model's bounding box against the current camera's matrix at +0x80, which
+// cCamera_update builds every frame from the camera's fov and from 0x586B88, the value the camera-width hook sets
+// (scrz = 448 / 0x586B88 / 2 / tan(fov/2); clip |x/z| <= 512/scrz, the visible screen is |x/z| <= 320/scrz: a 1.6x
+// margin on the PS2 too). So the test widens with the picture and follows the FieldOfView option; nothing else
+// decides it. The rest of the 2D (HUD widgets, menus, button prompts) is narrowed by hud_layout.cpp, which also
 // decides whether the font and gauge hooks still narrow (HudLayout=off: only they do, as in the pnach).
 #include "godhand/widescreen.h"
 #include "godhand/hud_layout.h"
 #include "godhand/log.h"
-#include "ps2_runtime_macros.h" // SET_GPR_U32
+#include "ps2_runtime_macros.h" // SET_GPR_U32, GPR_U32
 #include "runtime/ps2_display_options.h"
 
 #include <cmath>
@@ -86,6 +93,25 @@ namespace godhand
         }
 
         void cameraWidth(uint8_t *, R5900Context *ctx, PS2Runtime *) { setAt(ctx, g_camera); }
+
+        // Field of view: the player camera (cPlCamera) eases its fov (degrees, cCamera +0x250) toward a target every
+        // frame, fov = fov*0.9 + target*0.1, at two places in func_00139FF8 (called by cPlCamera_update), and resets
+        // it to 31 in cPlCamera_setCamUpdate. These hooks replace those three stores so the eased value goes to
+        // target*k instead: everything the game derives from the camera's fov then follows (the projection, the
+        // drawing clip matrix, the enemies' "on screen" test, LOD), and cutscene and other cameras keep theirs.
+        float g_fov = 1.0f;
+
+        void storeFov(uint8_t *rdram, R5900Context *ctx, float value)
+        {
+            const uint32_t address = (GPR_U32(ctx, 17) + 0x250u) & (PS2_RAM_SIZE - 1u); // s1 = the camera
+            std::memcpy(rdram + address, &value, sizeof(value));
+        }
+        // 0x13A6E4 swc1 $f1,0x250(s1): $f1 = fov*0.9 + $f20*0.1
+        void fovEaseA(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { storeFov(rdram, ctx, ctx->f[1] + 0.1f * (g_fov - 1.0f) * ctx->f[20]); }
+        // 0x13B368 swc1 $f0,0x250(s1): $f0 = fov*0.9 + $f3*0.1
+        void fovEaseB(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { storeFov(rdram, ctx, ctx->f[0] + 0.1f * (g_fov - 1.0f) * ctx->f[3]); }
+        // 0x13BBB8 swc1 $f0,0x250(s1): $f0 = 31.0, the player camera's starting fov
+        void fovReset(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { storeFov(rdram, ctx, ctx->f[0] * g_fov); }
         void fontWidth(uint8_t *, R5900Context *ctx, PS2Runtime *) { setAt(ctx, hud::narrowFont() ? g_font : kFontWidth); }
         void gaugeWidth(uint8_t *, R5900Context *ctx, PS2Runtime *) { setAt(ctx, hud::narrowGauge() ? g_gauge : 0x3F800000u); }
     }
@@ -101,6 +127,17 @@ namespace godhand
         g_font = asBits(asFloat(kFontWidth) / wider);
         g_gauge = asBits(1.0f / wider);
         ps2xRegisterHostHook("gh_ws_camera_width", &cameraWidth);
+        {
+            // [Video] FieldOfView: percent of the game's own (100 = the PS2's), 50..200
+            const char *fov = std::getenv("GODHAND_FOV");
+            const float percent = (fov && *fov) ? static_cast<float>(std::atof(fov)) : 100.0f;
+            g_fov = std::fmin(std::fmax(percent > 0.0f ? percent : 100.0f, 50.0f), 200.0f) / 100.0f;
+            ps2xRegisterHostHook("gh_fov_ease_a", &fovEaseA);
+            ps2xRegisterHostHook("gh_fov_ease_b", &fovEaseB);
+            ps2xRegisterHostHook("gh_fov_reset", &fovReset);
+            ps2xSetPatchFlag("fov", std::fabs(g_fov - 1.0f) > 0.001f);
+            GH_INFO(Game, "field of view " << g_fov * 100.0f << "% of the game's (player camera)");
+        }
         ps2xRegisterHostHook("gh_ws_font_width", &fontWidth);
         ps2xRegisterHostHook("gh_ws_gauge_width", &gaugeWidth);
         ps2xSetPatchFlag("widescreen", wide);

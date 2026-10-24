@@ -207,6 +207,28 @@ hook = "gh_ws_font_width"
 flag = "widescreen"
 replace = true
 
+# Field of view ("fov", [Video] FieldOfView, src/godhand/widescreen.cpp): the player camera's fov eases toward a
+# target (fov*0.9 + target*0.1) at two stores in func_00139FF8 and starts at 31 in cPlCamera_setCamUpdate; the hooks
+# replace those stores so it eases toward target*k. The game builds its projection, clip matrices and the enemies'
+# on-screen test (IsTargetVisible_14B470, the camera's +0x80 matrix) from that fov, so they all follow.
+[[patches.hooks]]
+address = "0x0013A6E4"
+hook = "gh_fov_ease_a"
+flag = "fov"
+replace = true
+
+[[patches.hooks]]
+address = "0x0013B368"
+hook = "gh_fov_ease_b"
+flag = "fov"
+replace = true
+
+[[patches.hooks]]
+address = "0x0013BBB8"
+hook = "gh_fov_reset"
+flag = "fov"
+replace = true
+
 # Health gauge width (lui at,0x3F80 = 1.0).
 [[patches.hooks]]
 address = "0x0014300C"
