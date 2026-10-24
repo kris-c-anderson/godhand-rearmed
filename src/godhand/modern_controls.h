@@ -12,25 +12,22 @@ namespace godhand::modern
     // and the F2 menu's Controls tab.
     void install();
 
-    // Camera side (game thread, once per player camera update; dt in seconds).
-    struct CameraState
-    {
-        bool battle = false;       // the battle (or a boss) preset camera is on (+0x51C > 0)
-        bool gameCamera = false;   // the game has taken the camera (a close-up preset, the second update path)
-    };
-    void noteCamera(const CameraState &state);
+    // Camera side (game thread, once per player camera update). battle: the battle (or a boss) preset camera is on
+    // (+0x51C > 0); gameCamera: the game has taken the camera (a close-up preset, the second update path).
+    void noteCamera(const uint8_t *rdram, bool battle, bool gameCamera);
 
-    // The free camera: false = the original camera (behind Gene). While free, yaw is the camera's direction around
-    // Gene in world radians and pitch the extra pitch to add. Advances the camera by the right stick (dt seconds);
-    // gameYaw / gamePitch: where the original camera would be this frame, which the free camera eases back to while
-    // the original controls are in effect.
+    // The free camera: false = the original camera (behind Gene). While free, yaw is the camera's direction round
+    // Gene in world radians and pitch the extra pitch to add. Advances the camera by the right stick (dt seconds),
+    // and turns Gene toward the left stick's direction (rdram: the player object) while he walks or stands.
+    // gameYaw: where the original camera would be this frame, which the free camera eases back to while the original
+    // controls are in effect; geneYaw: Gene's own yaw.
     struct FreeCamera
     {
         bool free = false;
         float yaw = 0.0f;
         float pitch = 0.0f;
     };
-    FreeCamera updateCamera(float gameYaw, float dt);
+    FreeCamera updateCamera(uint8_t *rdram, float gameYaw, float geneYaw, float dt);
     // setCamUpdate (a cut, a new room): back behind Gene.
     void resetCamera();
 }

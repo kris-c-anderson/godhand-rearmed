@@ -4,12 +4,12 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 24, 2026
 
-- **Control Style: Modern** (work in progress; `[Game] ControlStyle=modern`, Gameplay, F2 > Controls): the right
-  stick turns a free camera round Gene. The original controls (right stick = dodges, the camera behind Gene) while L1
-  is held (or toggled with `ModernL1=toggle`), and with `ModernAuto` while the battle camera is on; double-tap L1 =
-  the original quick turn, the camera swinging back behind Gene. Whenever the game takes the camera (grab and special
-  move close-ups, cutscenes, menus) the controls are the original ones. The left stick still moves Gene as on the PS2
-  for now.
+- **Control Style: Modern** (`[Game] ControlStyle=modern`, Gameplay, F2 > Controls): the right stick turns a free
+  camera round Gene and the left stick moves him relative to the camera (he faces where he walks). The original
+  controls (tank movement, right stick = dodges, the camera behind Gene) while L1 is held (or toggled with
+  `ModernL1=toggle`), and with `ModernAuto` in fights: from the battle camera coming on until no enemy has been within
+  6 m for 1.5 s. Double-tap L1 = the original quick turn, the camera staying behind Gene through it. Whenever the game
+  takes the camera (grab and special-move close-ups, cutscenes, menus) the controls are the original ones.
 - **Depth of field switch** (`[Video] DepthOfField`, Graphics; F2 > Graphics switches it while playing): the game's
   distance blur is composited from a quarter-size copy and mask of the picture, which at high internal resolutions
   shows as dark, jagged, shimmering fringes along the edges of distant geometry. The renderer takes the switch live

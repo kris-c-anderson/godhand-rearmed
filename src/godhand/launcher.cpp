@@ -638,16 +638,16 @@ namespace godhand::launcher
                         settingLabel("Unlock Hard", "Hard can be picked from the start instead of after a clear. Your "
                                                     "save is not changed.");
                         iniCheckbox(state, "On##hard", "Game", "UnlockHard", false);
-                        settingLabel("Control style", "Classic: as on the PS2. Modern (work in progress): the right "
-                                                      "stick turns the camera; hold or toggle L1 for the original "
-                                                      "controls, double-tap L1 for the quick turn. F2 > Controls "
+                        settingLabel("Control style", "Classic: as on the PS2. Modern: the right stick turns the camera "
+                                                      "and Gene moves where you point; hold or toggle L1 for the "
+                                                      "original controls, double-tap L1 for the quick turn. F2 > Controls "
                                                       "while playing.");
                         iniCombo(state, "##controlstyle", "Game", "ControlStyle", "classic",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kControlStyles, value); });
                         if (lower(state.ini.get("Game", "ControlStyle", "classic")) == "modern")
                         {
-                            settingLabel("Modern: auto", "The original controls whenever the battle camera is on (Gene "
-                                                         "has an enemy targeted).");
+                            settingLabel("Modern: auto", "The original controls in fights: from the battle camera coming "
+                                                         "on until no enemy is near.");
                             iniCheckbox(state, "On##modernauto", "Game", "ModernAuto", true);
                             settingLabel("Modern: L1", "Hold L1 for the original controls, or press it to switch to them "
                                                        "and back.");

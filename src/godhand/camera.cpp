@@ -108,7 +108,7 @@ namespace godhand
             int32_t mode;
             std::memcpy(&mode, rdram + kCameraPreset, sizeof(mode));
             const bool closeUp = battle && (mode == 3 || mode == 4 || mode == 8 || mode == 9 || mode == 13);
-            modern::noteCamera({battle, secondPath || closeUp});
+            modern::noteCamera(rdram, battle, secondPath || closeUp);
             g_mul += ((battle ? fightFactor() : fovFactor()) - g_mul) * 0.1f;
             g_battle.store(battle, std::memory_order_relaxed);
             g_camFov.store(loadFloat(rdram, cameraAt(ctx, 0x250u)), std::memory_order_relaxed);
@@ -166,7 +166,7 @@ namespace godhand
             const float dt = std::chrono::duration<float>(now - s_last).count();
             s_last = now;
             const float offset = loadFloat(rdram, cameraAt(ctx, 0x414u));
-            const modern::FreeCamera free = modern::updateCamera(ctx->f[1] + offset, dt);
+            const modern::FreeCamera free = modern::updateCamera(rdram, ctx->f[1] + offset, ctx->f[1], dt);
             g_freePitch = free.free ? free.pitch : 0.0f;
             if (!free.free)
             {

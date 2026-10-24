@@ -1,17 +1,23 @@
 // Control Style: Classic (the PS2's) or Modern.
 //
-// Modern: the right stick turns a free camera round Gene instead of dodging. The original controls (right stick =
-// dodges, the camera behind Gene) are in effect while L1 is held (Style: Hold) or after a press of L1 until the next
-// (Style: Toggle), and with Auto also while the game's battle camera is on (Gene has an enemy targeted). A double tap
-// of L1 is the original quick turn (L1 reaches the game only then), and the camera swings back behind Gene with him.
-// Whenever the game takes the camera (a close-up for a grab or a special move, a cutscene, a menu: no player camera
-// update for a moment), everything is Classic, L1 included.
+// Modern: the right stick turns a free camera round Gene instead of dodging, and the left stick moves him relative to
+// the camera (he faces where he walks). The original controls (tank movement, right stick = dodges, the camera behind
+// Gene) are in effect while L1 is held (Style: Hold) or after a press of L1 until the next (Style: Toggle), and with
+// Auto also in a fight: from the moment the game's battle camera comes on until no enemy is within 6 m for 1.5 s (the
+// battle camera itself turns off after a few seconds without attacking). A double tap of L1 is the original quick
+// turn (L1 reaches the game only then), and the camera swings back behind Gene with him. Whenever the game takes the
+// camera (a close-up for a grab or a special move, a cutscene, a menu: no player camera update for a moment),
+// everything is Classic, L1 included.
 //
-// Input side (window thread, the pad filter ps2_host_input calls for player 1): L1 and the right stick are taken
-// from what the game sees and published in atomics. Camera side (game thread, camera.cpp's yaw hook): the camera's
-// yaw round Gene and an extra pitch, eased back to the original camera when the original controls are in effect.
+// Input side (window thread, the pad filter ps2_host_input calls for player 1): L1 and the right stick are taken from
+// what the game sees; the left stick is turned into the stick the original controls would need for the same
+// direction (relative to where Gene faces). Camera side (game thread, camera.cpp's yaw hook): the camera's yaw round
+// Gene and an extra pitch, eased back to the original camera when the original controls are in effect; while Gene
+// stands or walks, his yaw (+0x104) is also turned toward the stick's direction directly (up to 900 degrees a
+// second), so he does not have to wait for the original turning speed.
 //
-// Step 1 of the Modern scheme: the left stick still moves Gene as on the PS2 (relative to where he faces).
+// Directions: the camera's yaw is in Gene's convention (the original camera's yaw is his + the offset at +0x414),
+// "right" on the stick is the direction a camera turned right by the stick would face (yaw decreasing).
 #include "godhand/modern_controls.h"
 #include "godhand/camera.h"
 #include "godhand/ini_file.h"
@@ -45,6 +51,12 @@ namespace godhand::modern
         constexpr int64_t kNoCameraMs = 150;   // no player camera update for this long: the game has the camera
         constexpr float kStickDeadzone = 0.18f;
         constexpr float kPitchMin = -0.35f, kPitchMax = 0.9f; // extra pitch, radians
+        constexpr int64_t kQuickTurnFollowMs = 650;            // the camera stays behind Gene this long after one
+        constexpr float kFightRange = 6.0f;                    // Auto: still in the fight while an enemy is this close
+        constexpr int64_t kFightLingerMs = 1500;               // ... or was, this long ago
+        constexpr float kTurnRate = 900.0f * (3.14159265f / 180.0f); // Gene turned toward the stick, radians a second
+        constexpr uint32_t kPlayerPointer = 0x747A94u;         // Getplayer
+        constexpr uint32_t kEnemyList = 0x5864F0u + 0x500u;    // cEmManage D_005864F0: the first used slot
 
         // Settings (F2 menu on the GS thread, read by the window and game threads).
         std::atomic<bool> g_modern{false};
@@ -56,13 +68,20 @@ namespace godhand::modern
         std::atomic<bool> g_invertY{false};
 
         // Camera side -> input side.
-        std::atomic<bool> g_battle{false};
+        std::atomic<bool> g_battle{false};      // in a fight (Auto): the battle camera, or still close to an enemy
+        std::atomic<bool> g_battleCamera{false};
+        std::atomic<float> g_nearestEnemy{1e9f}; // metres, live enemies only
         std::atomic<bool> g_gameCamera{false};
         std::atomic<int64_t> g_lastCameraMs{0};
+        std::atomic<bool> g_free{false};        // the free camera is on (not easing back to the original)
+        std::atomic<float> g_cameraYaw{0.0f};   // the free camera's yaw
+        std::atomic<float> g_geneYaw{0.0f};
 
         // Input side -> camera side.
         std::atomic<bool> g_classicByL1{false}; // L1 held (Hold) or toggled on (Toggle)
         std::atomic<float> g_stickX{0.0f}, g_stickY{0.0f};
+        std::atomic<bool> g_moving{false};      // the left stick asks for a direction (Modern movement)
+        std::atomic<float> g_moveYaw{0.0f};     // that direction (world yaw)
         std::atomic<uint32_t> g_recenter{0};    // bumped by each quick turn
 
         // Input side only (window thread).
@@ -98,6 +117,15 @@ namespace godhand::modern
             if (magnitude < kStickDeadzone)
                 return 0.0f;
             return std::copysign((magnitude - kStickDeadzone) / (1.0f - kStickDeadzone), axis);
+        }
+
+        float wrapAngle(float angle)
+        {
+            while (angle > kPi)
+                angle -= 2.0f * kPi;
+            while (angle < -kPi)
+                angle += 2.0f * kPi;
+            return angle;
         }
 
         // ps2_host_input's pad filter (window thread), player 1 only.
@@ -141,10 +169,17 @@ namespace godhand::modern
                                                   (quickTurn ? ps2x::iop::PadButton::L1 : 0u));
             state.pressure[kL1Pressure] = quickTurn ? 0xFFu : 0u;
 
-            if (classicByChoice())
+            if (classicByChoice() || !g_free.load(std::memory_order_relaxed))
             {
+                // The original controls (or the camera still easing back to them).
                 g_stickX = 0.0f;
                 g_stickY = 0.0f;
+                g_moving = false;
+                if (!classicByChoice())
+                {
+                    state.rightX = 0x80u; // easing out of a quick turn: no dodges from the camera stick
+                    state.rightY = 0x80u;
+                }
                 return;
             }
             // The free camera has the right stick; the game sees it centred (no dodges).
@@ -152,6 +187,25 @@ namespace godhand::modern
             g_stickY = stickAxis(state.rightY);
             state.rightX = 0x80u;
             state.rightY = 0x80u;
+
+            // The left stick, relative to the camera: the direction it asks for, as the stick the original controls
+            // would need for it (relative to where Gene faces).
+            const float lx = (static_cast<float>(state.leftX) - 128.0f) / 127.0f;
+            const float ly = (static_cast<float>(state.leftY) - 128.0f) / 127.0f;
+            const float magnitude = std::fmin(std::sqrt(lx * lx + ly * ly), 1.0f);
+            if (magnitude < kStickDeadzone)
+            {
+                g_moving = false;
+                return;
+            }
+            const float desired = wrapAngle(g_cameraYaw.load(std::memory_order_relaxed) - std::atan2(lx, -ly));
+            g_moveYaw = desired;
+            g_moving = true;
+            const float relative = wrapAngle(desired - g_geneYaw.load(std::memory_order_relaxed));
+            const float x = -std::sin(relative) * magnitude, up = std::cos(relative) * magnitude;
+            const auto axis = [](float value) { return static_cast<uint8_t>(std::lround(std::fmin(std::fmax(128.0f + value * 127.0f, 0.0f), 255.0f))); };
+            state.leftX = axis(x);
+            state.leftY = axis(-up);
         }
 
         // Camera side (game thread).
@@ -159,15 +213,64 @@ namespace godhand::modern
         float g_pitch = 0.0f;
         bool g_tracking = true;      // the free camera is on the original one (eased in, or just reset)
         bool g_following = false;   // a quick turn: easing back behind Gene before it is free again
+        int64_t g_followUntilMs = 0; // ... and staying there at least until then (his turn takes a moment)
         uint32_t g_recenterSeen = 0;
+        int64_t g_lastNearMs = -100000;
 
-        float wrapAngle(float angle)
+        uint32_t ram32(const uint8_t *rdram, uint32_t address)
         {
-            while (angle > kPi)
-                angle -= 2.0f * kPi;
-            while (angle < -kPi)
-                angle += 2.0f * kPi;
-            return angle;
+            uint32_t value;
+            std::memcpy(&value, rdram + (address & 0x1FFFFFFu), sizeof(value));
+            return value;
+        }
+
+        float ramFloat(const uint8_t *rdram, uint32_t address)
+        {
+            float value;
+            std::memcpy(&value, rdram + (address & 0x1FFFFFFu), sizeof(value));
+            return value;
+        }
+
+        bool validPointer(uint32_t pointer) { return pointer >= 0x100000u && pointer < 0x2000000u; }
+
+        // Metres from Gene to the nearest live enemy (cEmManage's list; enemies are kinds 0x200..0x27F, alive while
+        // +0x54A > 0 and +0x250 has no release bit).
+        float nearestEnemy(const uint8_t *rdram)
+        {
+            const uint32_t player = ram32(rdram, kPlayerPointer);
+            if (!validPointer(player) || !validPointer(ram32(rdram, player + 0xF0u)))
+                return 1e9f;
+            const uint32_t at = ram32(rdram, player + 0xF0u);
+            const float px = ramFloat(rdram, at), pz = ramFloat(rdram, at + 8u);
+            float best = 1e18f;
+            uint32_t slot = ram32(rdram, kEnemyList);
+            for (int guard = 0; guard < 64 && validPointer(slot); ++guard)
+            {
+                const uint32_t em = ram32(rdram, slot + 8u);
+                slot = ram32(rdram, slot + 4u);
+                if (!validPointer(em))
+                    continue;
+                uint16_t kind;
+                int16_t hp;
+                std::memcpy(&kind, rdram + em + 0x2FEu, sizeof(kind));
+                std::memcpy(&hp, rdram + em + 0x54Au, sizeof(hp));
+                const int32_t flags = static_cast<int32_t>(ram32(rdram, em + 0x250u));
+                if (kind < 0x200u || kind >= 0x280u || hp <= 0 || flags < 0)
+                    continue;
+                const uint32_t pos = ram32(rdram, em + 0xF0u);
+                if (!validPointer(pos))
+                    continue;
+                const float dx = ramFloat(rdram, pos) - px, dz = ramFloat(rdram, pos + 8u) - pz;
+                best = std::fmin(best, dx * dx + dz * dz);
+            }
+            return best < 1e17f ? std::sqrt(best) : 1e9f;
+        }
+
+        // Gene stands or walks: major step 0, sub-step 0 / 10 (standing) or 1 / 2 (walking).
+        bool geneMoves(const uint8_t *rdram, uint32_t player)
+        {
+            const uint8_t major = rdram[(player + 0x2F4u) & 0x1FFFFFFu], sub = rdram[(player + 0x2F5u) & 0x1FFFFFFu];
+            return major == 0u && (sub == 0u || sub == 1u || sub == 2u || sub == 10u);
         }
 
         std::filesystem::path g_iniPath;
@@ -252,10 +355,18 @@ namespace godhand::modern
             ui->separator_text("Now");
             const char *now = !g_modern.load()    ? "Classic"
                               : gameHasCamera()   ? "The game has the camera: original controls"
-                              : classicByChoice() ? (g_classicByL1.load() ? "Original controls (L1)" : "Original controls (battle camera)")
-                                                  : "Free camera";
+                              : classicByChoice() ? (g_classicByL1.load() ? "Original controls (L1)"
+                                                     : g_battleCamera.load() ? "Original controls (battle camera)"
+                                                                             : "Original controls (an enemy is near)")
+                                                  : "Free camera, camera-relative movement";
             ui->text(now);
-            ui->text_disabled("Step 1: the left stick still moves Gene as on the PS2 (relative to where he faces).");
+            char line[128];
+            const float nearest = g_nearestEnemy.load();
+            if (nearest < 1e8f)
+                std::snprintf(line, sizeof(line), "Nearest enemy: %.1f m (Auto stays on within %.0f m)", nearest, kFightRange);
+            else
+                std::snprintf(line, sizeof(line), "No enemy around");
+            ui->text_disabled(line);
 
             ui->separator_text("godhand.ini");
             if (ui->button("Save##controls"))
@@ -294,27 +405,40 @@ namespace godhand::modern
         }
     }
 
-    void noteCamera(const CameraState &state)
+    void noteCamera(const uint8_t *rdram, bool battle, bool gameCamera)
     {
-        g_battle.store(state.battle, std::memory_order_relaxed);
-        g_gameCamera.store(state.gameCamera, std::memory_order_relaxed);
-        g_lastCameraMs.store(nowMs(), std::memory_order_relaxed);
+        const int64_t now = nowMs();
+        const float nearest = nearestEnemy(rdram);
+        g_nearestEnemy.store(nearest, std::memory_order_relaxed);
+        if (nearest <= kFightRange)
+            g_lastNearMs = now;
+        // In a fight from the battle camera on, until no enemy has been within reach for a moment: the battle camera
+        // turns off after a few seconds without attacking, the fight does not.
+        const bool fight = battle || (g_battle.load(std::memory_order_relaxed) && now - g_lastNearMs <= kFightLingerMs);
+        g_battleCamera.store(battle, std::memory_order_relaxed);
+        g_battle.store(fight, std::memory_order_relaxed);
+        g_gameCamera.store(gameCamera, std::memory_order_relaxed);
+        g_lastCameraMs.store(now, std::memory_order_relaxed);
     }
 
-    FreeCamera updateCamera(float gameYaw, float dt)
+    FreeCamera updateCamera(uint8_t *rdram, float gameYaw, float geneYaw, float dt)
     {
         FreeCamera out;
+        g_geneYaw.store(geneYaw, std::memory_order_relaxed);
         if (!g_modern.load(std::memory_order_relaxed))
         {
             g_tracking = true;
+            g_free = false;
             return out;
         }
         dt = std::fmin(std::fmax(dt, 0.0f), 0.1f);
+        const int64_t now = nowMs();
         const uint32_t recenter = g_recenter.load(std::memory_order_relaxed);
         if (recenter != g_recenterSeen)
         {
             g_recenterSeen = recenter;
             g_following = true;
+            g_followUntilMs = now + kQuickTurnFollowMs;
         }
         const bool original = gameHasCamera() || classicByChoice();
         if (g_tracking && !original && !g_following)
@@ -325,16 +449,19 @@ namespace godhand::modern
         }
         if (original || g_following)
         {
-            // Ease back to the original camera; once there, it is the original camera exactly.
-            const float ease = 1.0f - std::exp(-dt * 7.0f);
+            // Back to the original camera (faster while following a quick turn); once there, it is the original
+            // camera exactly. A quick turn keeps it behind Gene until his turn is over.
+            const float ease = 1.0f - std::exp(-dt * (g_following ? 12.0f : 7.0f));
             g_yaw = wrapAngle(g_yaw + wrapAngle(gameYaw - g_yaw) * ease);
             g_pitch += (0.0f - g_pitch) * ease;
-            if (std::fabs(wrapAngle(gameYaw - g_yaw)) < 0.01f && std::fabs(g_pitch) < 0.005f)
+            const bool there = std::fabs(wrapAngle(gameYaw - g_yaw)) < 0.01f && std::fabs(g_pitch) < 0.005f;
+            if (there && now >= g_followUntilMs)
             {
                 g_following = false;
                 if (original)
                     g_tracking = true;
             }
+            g_free = false;
             if (g_tracking)
                 return out;
         }
@@ -344,7 +471,21 @@ namespace godhand::modern
             const float y = g_stickY.load(std::memory_order_relaxed) * (g_invertY.load() ? -1.0f : 1.0f);
             g_yaw = wrapAngle(g_yaw - x * g_yawSpeed.load(std::memory_order_relaxed) * kDegToRad * dt);
             g_pitch = std::fmin(std::fmax(g_pitch + y * g_pitchSpeed.load(std::memory_order_relaxed) * kDegToRad * dt, kPitchMin), kPitchMax);
+            g_free = true;
+
+            // Gene faces where the left stick points while he stands or walks (elsewhere the stick the filter made
+            // steers him the original way).
+            const uint32_t player = ram32(rdram, kPlayerPointer);
+            if (g_moving.load(std::memory_order_relaxed) && validPointer(player) && geneMoves(rdram, player))
+            {
+                const float target = g_moveYaw.load(std::memory_order_relaxed);
+                const float step = std::fmin(std::fmax(wrapAngle(target - geneYaw), -kTurnRate * dt), kTurnRate * dt);
+                const float turned = wrapAngle(geneYaw + step);
+                std::memcpy(rdram + ((player + 0x104u) & 0x1FFFFFFu), &turned, sizeof(turned));
+                g_geneYaw.store(turned, std::memory_order_relaxed);
+            }
         }
+        g_cameraYaw.store(g_yaw, std::memory_order_relaxed);
         out.free = true;
         out.yaw = g_yaw;
         out.pitch = g_pitch;
