@@ -268,6 +268,64 @@ hook = "gh_cam_distance"
 flag = "fov"
 replace = true
 
+# Enemies' facing cones follow the view (camera.cpp, docs/enemy-ai.md): run before the compare, they scale the cone's
+# register. func_00211C08: c.le.s $f0,$f1 with $f0 = the 60-degree wedge.
+[[patches.hooks]]
+address = "0x002126C4"
+hook = "gh_em_wedge"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x002127D0"
+hook = "gh_em_wedge"
+flag = "enemy_view"
+
+# func_00262AA8: c.lt.s $f0,$f1 with $f1 = the level's lunge cone (one per enemy-kind block).
+[[patches.hooks]]
+address = "0x00263CF4"
+hook = "gh_em_lunge"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00263FC8"
+hook = "gh_em_lunge"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x0026436C"
+hook = "gh_em_lunge"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00264D80"
+hook = "gh_em_lunge"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x002651AC"
+hook = "gh_em_lunge"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00265340"
+hook = "gh_em_lunge"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00265584"
+hook = "gh_em_lunge"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00267EB8"
+hook = "gh_em_lunge"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00267FC8"
+hook = "gh_em_lunge"
+flag = "enemy_view"
+
 # Health gauge width (lui at,0x3F80 = 1.0).
 [[patches.hooks]]
 address = "0x0014300C"

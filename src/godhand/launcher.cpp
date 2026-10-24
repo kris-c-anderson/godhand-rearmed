@@ -1,5 +1,6 @@
 #include "godhand/launcher.h"
 
+#include "godhand/camera_presets.h"
 #include "godhand/character_mods.h"
 #include "godhand/game_disc.h"
 #include "godhand/ini_file.h"
@@ -15,6 +16,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -453,6 +455,49 @@ namespace godhand::launcher
                 state.ini.setBool(section, key, value);
         }
 
+        // Display > Camera: the presets of camera_presets.h; "Custom" when the four values match none of them.
+        void cameraPresetCombo(State &state)
+        {
+            const auto value = [&](const char *key, float fallback)
+            {
+                const std::string text = state.ini.get("Video", key, "");
+                return text.empty() ? fallback : static_cast<float>(std::atof(text.c_str()));
+            };
+            const float fov = value("FieldOfView", 100.0f), fight = value("FightFieldOfView", 100.0f);
+            const float distance = value("CameraDistance", 100.0f), tilt = value("CameraTilt", 0.0f);
+            const auto same = [](float a, float b) { return std::fabs(a - b) < 0.05f; };
+            int current = -1;
+            for (size_t i = 0; i < std::size(kCameraPresets); ++i)
+            {
+                const CameraPreset &preset = kCameraPresets[i];
+                if (same(fov, preset.fieldOfView) && same(fight, preset.fightFieldOfView) &&
+                    same(distance, preset.cameraDistance) && same(tilt, preset.cameraTilt))
+                    current = static_cast<int>(i);
+            }
+            ImGui::SetNextItemWidth(-1.0f);
+            if (ImGui::BeginCombo("##camera", current >= 0 ? kCameraPresets[current].name : "Custom"))
+            {
+                for (size_t i = 0; i < std::size(kCameraPresets); ++i)
+                {
+                    const CameraPreset &preset = kCameraPresets[i];
+                    if (ImGui::Selectable(preset.name, static_cast<int>(i) == current))
+                    {
+                        const auto text = [](float number)
+                        {
+                            char buffer[32];
+                            std::snprintf(buffer, sizeof(buffer), "%g", number);
+                            return std::string(buffer);
+                        };
+                        state.ini.set("Video", "FieldOfView", text(preset.fieldOfView));
+                        state.ini.set("Video", "FightFieldOfView", text(preset.fightFieldOfView));
+                        state.ini.set("Video", "CameraDistance", text(preset.cameraDistance));
+                        state.ini.set("Video", "CameraTilt", text(preset.cameraTilt));
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
+
         void drawOptions(State &state)
         {
             ImGui::Dummy(ImVec2(0.0f, fontSize(state, 30.0f)));
@@ -465,6 +510,7 @@ namespace godhand::launcher
             const float footer = ImGui::GetFrameHeightWithSpacing() + fontSize(state, 36.0f);
             ImGui::BeginChild("options", ImVec2(width, ImGui::GetContentRegionAvail().y - footer),
                               ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
+            const bool advanced = state.ini.getBool("Launcher", "ShowAdvanced", false);
             if (ImGui::BeginTabBar("tabs"))
             {
                 const std::string aspect = state.ini.get("Video", "AspectRatio", "4:3");
@@ -488,23 +534,33 @@ namespace godhand::launcher
                         iniCombo(state, "##menus", "Video", "MenuLayout", "4:3",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kMenuLayouts, value); });
                         ImGui::EndDisabled();
-                        settingLabel("Field of view", "How much the gameplay camera shows, both ways (widescreen widens "
-                                                      "it sideways on its own). Cutscenes keep their framing; enemies "
-                                                      "behave the same either way.");
-                        iniCombo(state, "##fov", "Video", "FieldOfView", "100",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kFovs, value); });
-                        settingLabel("Field of view in fights", "The same while the game's battle camera is on (Gene "
-                                                                "has an enemy targeted). 100% frames fights as on the PS2.");
-                        iniCombo(state, "##fightfov", "Video", "FightFieldOfView", "100",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kFovs, value); });
-                        settingLabel("Camera distance", "At a wider field of view, how far the camera comes in toward "
-                                                        "Gene. Coming all the way in keeps him the size he is at 100%.");
-                        iniCombo(state, "##camdist", "Video", "CameraDistance", "100",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kCameraDistances, value); });
-                        settingLabel("Camera tilt", "At a wider field of view, the camera also rises and looks down at "
-                                                    "Gene by this much: more of the floor ahead, less sky.");
-                        iniCombo(state, "##camtilt", "Video", "CameraTilt", "0",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kCameraTilts, value); });
+                        settingLabel("Camera", "How much the gameplay camera shows and how it frames Gene (widescreen "
+                                               "already widens it sideways). Cutscenes keep their framing. F2 while "
+                                               "playing tunes it live.");
+                        cameraPresetCombo(state);
+                        if (advanced)
+                        {
+                            settingLabel("Field of view", "How much the camera shows, both ways, outside fights.");
+                            iniCombo(state, "##fov", "Video", "FieldOfView", "100",
+                                     [](const char *id, std::string &value) { return choiceCombo(id, kFovs, value); });
+                            settingLabel("Field of view in fights", "The same while the game's battle camera is on (Gene "
+                                                                    "has an enemy targeted). 100% frames fights as on the PS2.");
+                            iniCombo(state, "##fightfov", "Video", "FightFieldOfView", "100",
+                                     [](const char *id, std::string &value) { return choiceCombo(id, kFovs, value); });
+                            settingLabel("Camera distance", "At a wider field of view, how far the camera comes in toward "
+                                                            "Gene. Coming all the way in keeps him the size he is at 100%.");
+                            iniCombo(state, "##camdist", "Video", "CameraDistance", "100",
+                                     [](const char *id, std::string &value) { return choiceCombo(id, kCameraDistances, value); });
+                            settingLabel("Camera tilt", "At a wider field of view, the camera also rises and looks down at "
+                                                        "Gene by this much: more of the floor ahead, less sky.");
+                            iniCombo(state, "##camtilt", "Video", "CameraTilt", "0",
+                                     [](const char *id, std::string &value) { return choiceCombo(id, kCameraTilts, value); });
+                            settingLabel("Enemies follow the view", "The angles round Gene in which enemies close in and "
+                                                                    "lunge widen with the picture, so the ones you can see "
+                                                                    "at the edges join in as on the PS2. Off: the original "
+                                                                    "angles.");
+                            iniCheckbox(state, "On##enemyview", "Game", "EnemiesFollowView", true);
+                        }
                         settingLabel("Window", "F11 switches between window and fullscreen while playing.");
                         {
                             std::string mode = state.ini.getBool("Video", "StartFullscreen", false)  ? "fullscreen"
@@ -626,6 +682,9 @@ namespace godhand::launcher
             }
             ImGui::EndChild();
             ImGui::Dummy(ImVec2(0.0f, fontSize(state, 6.0f)));
+            ImGui::SetCursorPosX((ImGui::GetWindowWidth() - width) * 0.5f);
+            iniCheckbox(state, "Show advanced settings##advanced", "Launcher", "ShowAdvanced", false);
+            ImGui::SameLine();
             const float backWidth = fontSize(state, 200.0f);
             ImGui::SetCursorPosX((ImGui::GetWindowWidth() - backWidth) * 0.5f);
             const bool back = ImGui::Button("Back", ImVec2(backWidth, 0.0f));

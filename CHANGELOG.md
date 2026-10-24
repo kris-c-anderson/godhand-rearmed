@@ -4,6 +4,15 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 24, 2026
 
+- **Enemies follow the wider view** (`[Game] EnemiesFollowView`, on by default; Options > Show advanced settings):
+  the angles round Gene in which enemies close in and lunge widen by as much as the picture reaches further round him
+  than the PS2's did (`docs/enemy-ai.md`), so enemies at the edges of a wide view fight as they did at the PS2's
+  edges. Nothing changes at 4:3 and 100%.
+- **F2 in-game menu, Camera tab:** field of view, field of view in fights, camera distance and tilt, the enemy
+  setting and the presets, all applied while playing; "Keep playing" leaves the controller and keyboard to the game
+  and the mouse to the menu; Save writes godhand.ini and shows the values as a preset line.
+- **Launcher:** Display > Camera offers presets ("As on the PS2", "Wider", "Widest"); "Show advanced settings" shows
+  the camera's own values.
 - **Field of view** (Display > Field of view, `[Video] FieldOfView`, 100-150%): the gameplay camera's own fov is
   scaled where the game eases it toward its target, so the projection and culling follow; cutscenes keep their
   framing. **Field of view in fights** (`FightFieldOfView`, default 100%): the same while the game's battle camera is

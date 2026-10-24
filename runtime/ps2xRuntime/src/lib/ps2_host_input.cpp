@@ -1257,6 +1257,7 @@ namespace ps2_host_input
         int g_ignoredMouseButton = -1;
         bool g_skipMouseDelta = false;
         bool g_mouseMoved = false;
+        std::atomic<bool> g_menuMouse{false}; // setMenuHasMouse: the in-game menu has the mouse
         float g_mouseRightX = 0.0f;
         float g_mouseRightY = 0.0f;
         MouseCameraInput g_mouseCameraInput;
@@ -1377,7 +1378,7 @@ namespace ps2_host_input
                 // With the mouse camera on, only while the mouse is captured (the click that captures it is skipped).
                 if (g_mouseCameraEnabled.load(std::memory_order_relaxed) && (!g_mouseLocked || element.code == g_ignoredMouseButton))
                     return 0.0f;
-                return IsWindowFocused() && IsMouseButtonDown(element.code) ? 1.0f : 0.0f;
+                return IsWindowFocused() && !g_menuMouse.load(std::memory_order_relaxed) && IsMouseButtonDown(element.code) ? 1.0f : 0.0f;
             case Source::PadButton:
                 if ((element.code == ps2_host_gamepads::Back || element.code == ps2_host_gamepads::Start) && element.device >= 0 &&
                     element.device < ps2_host_gamepads::kMaxDevices)
@@ -1494,7 +1495,7 @@ namespace ps2_host_input
         void sampleMouse()
         {
             g_mouseMoved = false;
-            if (!g_mouseCameraEnabled.load(std::memory_order_relaxed))
+            if (!g_mouseCameraEnabled.load(std::memory_order_relaxed) || g_menuMouse.load(std::memory_order_relaxed))
             {
                 if (g_mouseLocked)
                     EnableCursor();
@@ -2007,6 +2008,11 @@ namespace ps2_host_input
     void setBlocked(bool blocked)
     {
         g_blocked.store(blocked, std::memory_order_relaxed);
+    }
+
+    void setMenuHasMouse(bool menu)
+    {
+        g_menuMouse.store(menu, std::memory_order_relaxed);
     }
 
     // ---- Controls screen support (window thread) --------------------------------------------------------------------

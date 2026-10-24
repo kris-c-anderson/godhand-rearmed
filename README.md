@@ -28,6 +28,9 @@ work. Improvements and discoveries from the recomp and from the
   speed (a port of the "60 Fps" PCSX2 patch, fixed where the port's timing differed).
 - **Any aspect ratio:** 16:9, 21:9, 32:9 or anything else, with the camera widened and the HUD placed at the screen
   edges (or kept where the PS2 had it); menus stay in the PS2's proportions or stretch, your choice.
+- **A wider camera that still plays like the original:** a field of view option that brings the camera in so Gene
+  keeps his size, fights framed as on the PS2, and enemies whose sense of "in front of Gene" widens with the picture,
+  so the ones you can now see at the edges fight as they did at the PS2's edges. Tunable live in the F2 menu.
 - **HD texture packs:** PCSX2-format replacement packs, with or without the character mods' own textures.
 - **A launcher:** install (pick and check your disc image), play, and every option in one place: display, graphics,
   gameplay, mods, controls.
@@ -103,13 +106,13 @@ Your settings are in `build\port\bin\godhand.ini` (every launcher option is a li
 
 | Where | What |
 |---|---|
-| Display | Aspect ratio, HUD layout (16:9 edges or 4:3), menu layout (4:3 or stretched), window / full screen, window size |
+| Display | Aspect ratio, HUD layout (16:9 edges or 4:3), menu layout (4:3 or stretched), camera (presets; with "Show advanced settings": field of view, in fights, distance, tilt, enemies following the view), window / full screen, window size |
 | Graphics | Internal resolution (1x–8x), post effects (PS2 resolution or upscaled), HD texture pack and its folder |
 | Gameplay | 60 FPS, L3 dash, roulette timer (normal / double), Unlock Hard, mute music |
 | Mods | Character: Gene or Xavier |
 | Controls | Every key, mouse button and controller button (also F1 in game) |
 
-In game: **F1** controls, **F6** / **F7** menu and HUD layout, **F11** full screen, **F12** debugger.
+In game: **F1** controls, **F2** in-game menu (the camera, tuned live), **F6** / **F7** menu and HUD layout, **F11** full screen, **F12** debugger.
 
 ---
 

@@ -133,12 +133,21 @@ namespace
     }
     void UiBeginDisabled(int disabled) { ImGui::BeginDisabled(disabled != 0); }
     void UiEndDisabled() { ImGui::EndDisabled(); }
+    int UiSliderFloat(const char *label, float *value, float min, float max, const char *format)
+    {
+        float v = value ? *value : 0.0f;
+        const bool changed = ImGui::SliderFloat(label, &v, min, max, format ? format : "%.2f");
+        if (value)
+            *value = v;
+        return changed ? 1 : 0;
+    }
+    int UiIsItemActive() { return ImGui::IsItemActive() ? 1 : 0; }
 
-    const Pcsx2GsUi g_ui = {2u, UiBeginWindow, UiEndWindow, UiBeginTabBar, UiEndTabBar, UiBeginTab, UiEndTab, UiText,
+    const Pcsx2GsUi g_ui = {3u, UiBeginWindow, UiEndWindow, UiBeginTabBar, UiEndTabBar, UiBeginTab, UiEndTab, UiText,
                             UiTextWrapped, UiTextDisabled, UiTextColored, UiHeading, UiCheckbox, UiButton, UiSameLine,
                             UiSeparator, UiSpacing, UiBeginChild, UiEndChild, UiPushId, UiPopId, UiCombo, UiRadio,
                             UiSmallButton, UiSeparatorText, UiIndent, UiUnindent, UiSetNextWidth, UiBeginDisabled,
-                            UiEndDisabled};
+                            UiEndDisabled, UiSliderFloat, UiIsItemActive};
 
     // The menu's look: ImGui's dark style with the launcher's red.
     void ApplyMenuStyle()

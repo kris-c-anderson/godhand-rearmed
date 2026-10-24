@@ -42,6 +42,7 @@ set(GODHAND_HOST_SOURCES
     godhand/game_options.cpp
     godhand/character_mods.cpp
     godhand/widescreen.cpp
+    godhand/camera.cpp
     godhand/hud_layout.cpp
     godhand/ini_file.cpp
     godhand/counter_finder.cpp

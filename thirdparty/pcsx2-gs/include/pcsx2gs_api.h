@@ -85,6 +85,9 @@ typedef struct Pcsx2GsUi
     void (*set_next_width)(float width); // width of the next item (0 = default)
     void (*begin_disabled)(int disabled);
     void (*end_disabled)(void);
+    // version 3
+    int (*slider_float)(const char *label, float *value, float min, float max, const char *format); // printf format
+    int (*is_item_active)(void); // the last item is being dragged / edited
 } Pcsx2GsUi;
 
 typedef void (*Pcsx2GsMenuFn)(const Pcsx2GsUi *ui, void *user);

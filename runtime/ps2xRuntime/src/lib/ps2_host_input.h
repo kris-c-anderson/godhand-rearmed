@@ -25,6 +25,9 @@ namespace ps2_host_input
     void setVibration(uint32_t port, uint32_t slot, uint8_t smallMotor, uint8_t largeMotor);
     // While blocked (the in-game menu is open) every pad stays plugged in but idle, so the game keeps running.
     void setBlocked(bool blocked);
+    // While set (the in-game menu is open and lets the game keep the controllers and keys), the mouse is the menu's:
+    // no mouse camera, no mouse-button bindings, the cursor stays free.
+    void setMenuHasMouse(bool menu);
 
     // Controls screen (F1, ps2_controls_screen.cpp; window thread). Open: every pad idle but plugged in. Closed again:
     // each player stays idle until its own buttons and sticks are released (at most 2 s).

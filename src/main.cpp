@@ -31,6 +31,7 @@
 #include "godhand/game_options.h"
 #include "godhand/character_mods.h"
 #include "godhand/widescreen.h"
+#include "godhand/camera.h"
 #if GODHAND_HAS_LAUNCHER
 #include "godhand/launcher.h"
 #endif
@@ -380,6 +381,7 @@ namespace
         {"video", "fightfieldofview", "GODHAND_FIGHT_FOV"},
         {"video", "cameradistance", "GODHAND_CAMERA_DISTANCE"},
         {"video", "cameratilt", "GODHAND_CAMERA_TILT"},
+        {"game", "enemiesfollowview", "GODHAND_ENEMY_VIEW"},
         {"video", "startfullscreen", "GODHAND_START_FULLSCREEN"},
         {"video", "posteffects", "PS2X_PCSX2_NATIVE_SCALING"},
         {"launcher", "show", "GODHAND_LAUNCHER"},
@@ -647,6 +649,7 @@ int main(int argc, char *argv[])
     const bool controlsFileFromEnvironment = std::getenv("GODHAND_CONTROLS_FILE") && *std::getenv("GODHAND_CONTROLS_FILE");
     std::vector<std::pair<std::string, std::string>> padLayout;
     const std::vector<std::string> settingNotes = loadSettings(exeDir / "godhand.ini", exeDir, padLayout);
+    godhand::setCameraIniPath(exeDir / "godhand.ini"); // the F2 menu's Camera tab saves there
     if (writeSettingsOnly)
         return kExitOk;
     redirectOutput();

@@ -33,6 +33,8 @@ namespace ps2x::menu
         std::string g_empty;
         std::atomic<bool> g_open{false};
         std::atomic<bool> g_closedByWindow{false}; // the window's close button (GS thread)
+        std::atomic<bool> g_keepPlaying{false};    // the game keeps the controllers and keys; the menu has the mouse
+        std::atomic<bool> g_keepPlayingChanged{false};
 
         bool enabled()
         {
@@ -54,6 +56,12 @@ namespace ps2x::menu
             {
                 if (!g_hint.empty())
                     ui->text_disabled(g_hint.c_str());
+                int keep = g_keepPlaying.load(std::memory_order_relaxed) ? 1 : 0;
+                if (ui->checkbox("Keep playing while this is open (controller and keyboard play; the mouse works the menu)", &keep))
+                {
+                    g_keepPlaying.store(keep != 0, std::memory_order_relaxed);
+                    g_keepPlayingChanged.store(true, std::memory_order_relaxed);
+                }
                 if (g_panels.empty())
                 {
                     ui->spacing();
@@ -123,10 +131,19 @@ namespace ps2x::menu
             return input;
         }
 
+        // Who has the input while the menu is open: the menu (the game idles) or, with "keep playing", the game,
+        // with only the mouse for the menu.
+        void applyInputOwner(bool open)
+        {
+            const bool keep = g_keepPlaying.load(std::memory_order_relaxed);
+            ps2_host_input::setBlocked(open && !keep);
+            ps2_host_input::setMenuHasMouse(open); // the cursor is free for the menu either way
+        }
+
         void setOpen(bool open)
         {
             g_open.store(open, std::memory_order_relaxed);
-            ps2_host_input::setBlocked(open);
+            applyInputOwner(open);
             GSPcsx2Backend::SetMenu(open ? reinterpret_cast<void *>(&drawMenu) : nullptr, nullptr);
             std::fprintf(stderr, "[menu] %s\n", open ? "opened" : "closed");
         }
@@ -166,9 +183,16 @@ namespace ps2x::menu
             setOpen(!isOpen());
         else if (g_closedByWindow.exchange(false, std::memory_order_relaxed) && isOpen())
             setOpen(false);
+        if (g_keepPlayingChanged.exchange(false, std::memory_order_relaxed))
+            applyInputOwner(isOpen());
         if (isOpen())
         {
-            const Pcsx2GsMenuInput input = readInput();
+            Pcsx2GsMenuInput input = readInput();
+            if (g_keepPlaying.load(std::memory_order_relaxed))
+            {
+                input.keys = 0u; // they go to the game
+                input.pad = 0u;
+            }
             GSPcsx2Backend::SetMenuInput(&input);
         }
 #endif

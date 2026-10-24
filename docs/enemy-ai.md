@@ -83,11 +83,13 @@ and 5000 points (`0x3BF160`; the fourth level is skipped). `cCoreSave_getGameDif
 So Hard is Level DIE for the whole game, and Normal at DIE plays the same: the lunge cone covers Gene's whole front
 half, the first three come in to 1.8 m, and nobody steps back.
 
-## Where a change would go
+## What the port changes
 
-- Widen the 60° wedge: the compares at `0x2126C4` and `0x2127D0` in `func_00211C08` (`lui at,0x3F86` / `ori
-  at,0x0A92` = 1.0472 just before each).
-- Widen the lunge cones: the per-level angle tables read in `func_00262AA8` (`D_00444990`, `D_00444AD0` and the other
-  blocks that read `+0x768`).
-- Use the real camera instead of the wedge: hooks at those compares that test the enemy against the camera's view
-  instead of the angle.
+With `[Game] EnemiesFollowView=1` (the default), `src/godhand/camera.cpp` scales the 60° wedge (the compares at
+`0x2126C4` and `0x2127D0` in `func_00211C08`) and the lunge cones (the nine compares that read `+0x768` in
+`func_00262AA8`) by how much further round Gene the picture reaches than the PS2's did, at the enemy's distance: the
+screen's edge passes Gene's facing at `phi + asin(D sin(phi) / r)` (`phi` = half the picture's width as an angle, `D`
+= the camera's distance on the floor, `r` = the enemy's), now and as the PS2 would have it (the game's own fov and
+camera distance, 4:3), and every cone is multiplied by the ratio (never past 150°). At 4:3 and 100% the ratio is 1.
+Close in (where the whole circle is on screen either way) it falls back to 1 too. The F2 menu's Camera tab shows the
+current factor.
