@@ -94,6 +94,8 @@ namespace godhand
             std::memcpy(rdram + cameraAt(ctx, 0x250u), &value, sizeof(value));
         }
 
+        float g_lastDistance = 4.0f; // the eye's distance from the look point last update (orbitDistance)
+
         // Depth precision. cCamera_update builds the projection with sceVu0ViewScreenMatrix (func_0030AA40, called at
         // 0x138864): zmin 1, zmax 2031584 / fov (65535 at the player camera's 31 degrees), near 0.1, far 600, into a
         // 16-bit depth buffer (Z16S). Depth then falls as 1/distance: 65535 * 0.1 / d, about 330 at 20 m and 110 at
@@ -204,8 +206,6 @@ namespace godhand
                 relative += 2.0f * kPi;
             ctx->f[2] = relative;
         }
-
-        float g_lastDistance = 4.0f; // the eye's distance from the look point last update (orbitDistance)
 
         float orbitPitch(const uint8_t *rdram, R5900Context *ctx)
         {
